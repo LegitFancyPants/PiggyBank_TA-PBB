@@ -129,10 +129,11 @@ fun TransactionListContent(
                 )
             }
 
-            if (uiState.isUsingMockData && uiState.errorMessage != null) {
+            if (uiState.isUsingMockData) {
                 item {
                     MockDataBanner(
-                        message = uiState.errorMessage,
+                        message = uiState.errorMessage
+                            ?: "Mode lokal aktif. Tekan Coba Lagi untuk sinkronisasi server.",
                         onRefresh = onRefresh,
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )

@@ -127,10 +127,11 @@ fun GoalListContent(
                 )
             }
 
-            if (uiState.isUsingMockData && uiState.errorMessage != null) {
+            if (uiState.isUsingMockData) {
                 item {
                     GoalMockDataBanner(
-                        message = uiState.errorMessage,
+                        message = uiState.errorMessage
+                            ?: "Mode lokal aktif. Tekan Coba Lagi untuk sinkronisasi server.",
                         onRefresh = onRefresh
                     )
                 }
