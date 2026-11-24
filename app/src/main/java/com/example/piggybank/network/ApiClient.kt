@@ -4,7 +4,7 @@ import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 object ApiClient {
-    private const val BASE_URL = "https://piggybank-api.vercel.app/api/"
+    private const val BASE_URL = "https://piggybank-api-eight.vercel.app/api/"
 
     val apiService: ApiService by lazy {
         Retrofit.Builder()
