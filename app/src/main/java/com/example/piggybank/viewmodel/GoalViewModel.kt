@@ -3,9 +3,11 @@ package com.example.piggybank.viewmodel
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.piggybank.model.GoalRequest
+import com.example.piggybank.model.GoalSortOption
+import com.example.piggybank.model.GoalStatusFilter
 import com.example.piggybank.model.SavingsGoal
+import com.example.piggybank.model.filterAndSortGoals
 import com.example.piggybank.model.sampleSavingsGoals
-import com.example.piggybank.model.sortedByDeadlineAndCreation
 import com.example.piggybank.network.ApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -17,6 +19,10 @@ import java.io.IOException
 
 data class GoalUiState(
     val goals: List<SavingsGoal> = emptyList(),
+    val displayedGoals: List<SavingsGoal> = emptyList(),
+    val selectedStatusFilter: GoalStatusFilter = GoalStatusFilter.ALL,
+    val searchQuery: String = "",
+    val selectedSortOption: GoalSortOption = GoalSortOption.NEWEST,
     val totalActiveGoals: Int = 0,
     val totalSavedAllGoals: Long = 0L,
     val selectedGoal: SavingsGoal? = null,
@@ -71,14 +77,20 @@ class GoalViewModel : ViewModel() {
 
             try {
                 val remote = ApiClient.apiService.getGoalById(id)
-                val updatedList = (if (_uiState.value.goals.any { it.id == remote.id }) {
+                val updatedList = if (_uiState.value.goals.any { it.id == remote.id }) {
                     _uiState.value.goals.map { if (it.id == remote.id) remote else it }
                 } else {
                     _uiState.value.goals
-                }).sortedByDeadlineAndCreation()
-                _uiState.update {
-                    it.copy(
+                }
+                _uiState.update { current ->
+                    current.copy(
                         goals = updatedList,
+                        displayedGoals = filterAndSortGoals(
+                            goals = updatedList,
+                            statusFilter = current.selectedStatusFilter,
+                            searchQuery = current.searchQuery,
+                            sortOption = current.selectedSortOption
+                        ),
                         totalActiveGoals = updatedList.size,
                         totalSavedAllGoals = updatedList.sumOf { goal -> goal.currentAmount },
                         selectedGoal = remote,
@@ -278,6 +290,48 @@ class GoalViewModel : ViewModel() {
         }
     }
 
+    fun setStatusFilter(filter: GoalStatusFilter) {
+        _uiState.update { current ->
+            current.copy(
+                selectedStatusFilter = filter,
+                displayedGoals = filterAndSortGoals(
+                    goals = current.goals,
+                    statusFilter = filter,
+                    searchQuery = current.searchQuery,
+                    sortOption = current.selectedSortOption
+                )
+            )
+        }
+    }
+
+    fun setSearchQuery(query: String) {
+        _uiState.update { current ->
+            current.copy(
+                searchQuery = query,
+                displayedGoals = filterAndSortGoals(
+                    goals = current.goals,
+                    statusFilter = current.selectedStatusFilter,
+                    searchQuery = query,
+                    sortOption = current.selectedSortOption
+                )
+            )
+        }
+    }
+
+    fun setSortOption(sortOption: GoalSortOption) {
+        _uiState.update { current ->
+            current.copy(
+                selectedSortOption = sortOption,
+                displayedGoals = filterAndSortGoals(
+                    goals = current.goals,
+                    statusFilter = current.selectedStatusFilter,
+                    searchQuery = current.searchQuery,
+                    sortOption = sortOption
+                )
+            )
+        }
+    }
+
     fun clearError() {
         _uiState.update { it.copy(errorMessage = null) }
     }
@@ -295,12 +349,17 @@ class GoalViewModel : ViewModel() {
         isUsingMockData: Boolean,
         errorMessage: String?
     ) {
-        val sortedGoals = goals.sortedByDeadlineAndCreation()
         _uiState.update { current ->
             current.copy(
-                goals = sortedGoals,
-                totalActiveGoals = sortedGoals.size,
-                totalSavedAllGoals = sortedGoals.sumOf { it.currentAmount },
+                goals = goals,
+                displayedGoals = filterAndSortGoals(
+                    goals = goals,
+                    statusFilter = current.selectedStatusFilter,
+                    searchQuery = current.searchQuery,
+                    sortOption = current.selectedSortOption
+                ),
+                totalActiveGoals = goals.size,
+                totalSavedAllGoals = goals.sumOf { it.currentAmount },
                 isLoading = false,
                 isUsingMockData = isUsingMockData,
                 errorMessage = errorMessage

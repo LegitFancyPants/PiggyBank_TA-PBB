@@ -1,6 +1,9 @@
 package com.example.piggybank
 
+import com.example.piggybank.model.GoalSortOption
+import com.example.piggybank.model.GoalStatusFilter
 import com.example.piggybank.model.SavingsGoal
+import com.example.piggybank.model.filterAndSortGoals
 import com.example.piggybank.model.sampleSavingsGoals
 import com.example.piggybank.model.sortedByDeadlineAndCreation
 import org.junit.Assert.assertEquals
@@ -35,8 +38,10 @@ class SavingsGoalTest {
             currentAmount = 1_250_000L
         )
         assertEquals(1.0f, overfunded.progressFraction, 0.001f)
-        assertEquals(125, overfunded.progressPercentage)
+        assertEquals(100, overfunded.progressPercentage)
         assertEquals(0L, overfunded.remainingAmount)
+        assertEquals(250_000L, overfunded.surplusAmount)
+        assertTrue(overfunded.isCompleted)
 
         val zeroTarget = SavingsGoal(
             id = 4L,
@@ -47,6 +52,7 @@ class SavingsGoalTest {
         assertEquals(0f, zeroTarget.progressFraction, 0.001f)
         assertEquals(0, zeroTarget.progressPercentage)
         assertEquals(0L, zeroTarget.remainingAmount)
+        assertFalse(zeroTarget.isCompleted)
     }
 
     @Test
@@ -90,5 +96,65 @@ class SavingsGoalTest {
 
         val completedPastDeadline = overdue.copy(currentAmount = 750_000L)
         assertFalse(completedPastDeadline.isOverdue(today))
+    }
+
+    @Test
+    fun filtersByStatusAndFlexibleNameOnlySearch() {
+        val goals = listOf(
+            SavingsGoal(id = 1L, name = "Dana Darurat", targetAmount = 1_000_000L, currentAmount = 500_000L, note = "Khusus laptop"),
+            SavingsGoal(id = 2L, name = "Upgrade SSD Laptop", targetAmount = 600_000L, currentAmount = 600_000L, note = "Rutin"),
+            SavingsGoal(id = 3L, name = "Liburan Bali", targetAmount = 2_000_000L, currentAmount = 200_000L, note = "Akhir tahun")
+        )
+
+        assertEquals(3, filterAndSortGoals(goals, statusFilter = GoalStatusFilter.ALL).size)
+        assertEquals(
+            listOf("Liburan Bali", "Dana Darurat"),
+            filterAndSortGoals(goals, statusFilter = GoalStatusFilter.IN_PROGRESS).map { it.name }
+        )
+        assertEquals(
+            listOf("Upgrade SSD Laptop"),
+            filterAndSortGoals(goals, statusFilter = GoalStatusFilter.COMPLETED).map { it.name }
+        )
+
+        // Substring di tengah, tidak sensitif kapital, dan tidak mencocokkan field note ("laptop" di Dana Darurat)
+        assertEquals(
+            listOf("Upgrade SSD Laptop"),
+            filterAndSortGoals(goals, searchQuery = "ssd").map { it.name }
+        )
+        assertEquals(
+            listOf("Upgrade SSD Laptop"),
+            filterAndSortGoals(goals, searchQuery = "lApToP").map { it.name }
+        )
+        assertTrue(filterAndSortGoals(goals, searchQuery = "Motor Baru").isEmpty())
+    }
+
+    @Test
+    fun sortsByAllFiveSortOptions() {
+        val goals = listOf(
+            SavingsGoal(id = 1L, name = "Zebra Tabungan", targetAmount = 500_000L, currentAmount = 0L, createdAt = "2026-11-01T10:00:00Z"),
+            SavingsGoal(id = 2L, name = "Alpha Dana", targetAmount = 2_000_000L, currentAmount = 0L, createdAt = "2026-11-03T10:00:00Z"),
+            SavingsGoal(id = 3L, name = "Modal Usaha", targetAmount = 1_000_000L, currentAmount = 0L, createdAt = "2026-11-02T10:00:00Z")
+        )
+
+        assertEquals(
+            listOf("Alpha Dana", "Modal Usaha", "Zebra Tabungan"),
+            filterAndSortGoals(goals, sortOption = GoalSortOption.ALPHABETICAL).map { it.name }
+        )
+        assertEquals(
+            listOf("Zebra Tabungan", "Modal Usaha", "Alpha Dana"),
+            filterAndSortGoals(goals, sortOption = GoalSortOption.OLDEST).map { it.name }
+        )
+        assertEquals(
+            listOf("Alpha Dana", "Modal Usaha", "Zebra Tabungan"),
+            filterAndSortGoals(goals, sortOption = GoalSortOption.NEWEST).map { it.name }
+        )
+        assertEquals(
+            listOf("Alpha Dana", "Modal Usaha", "Zebra Tabungan"),
+            filterAndSortGoals(goals, sortOption = GoalSortOption.TARGET_DESC).map { it.name }
+        )
+        assertEquals(
+            listOf("Zebra Tabungan", "Modal Usaha", "Alpha Dana"),
+            filterAndSortGoals(goals, sortOption = GoalSortOption.TARGET_ASC).map { it.name }
+        )
     }
 }

@@ -19,7 +19,6 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CalendarToday
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.WarningAmber
@@ -65,14 +64,16 @@ import com.example.piggybank.model.sampleSavingsGoals
 import com.example.piggybank.ui.theme.BackgroundCanvas
 import com.example.piggybank.ui.theme.CardBorder
 import com.example.piggybank.ui.theme.CardSurface
-import com.example.piggybank.ui.theme.DarkTeal
 import com.example.piggybank.ui.theme.ExpenseRed
 import com.example.piggybank.ui.theme.ExpenseTint
-import com.example.piggybank.ui.theme.MintSurfaceTint
+import com.example.piggybank.ui.theme.IncomeGreen
 import com.example.piggybank.ui.theme.PiggyBankTheme
 import com.example.piggybank.ui.theme.PrimaryTeal
+import com.example.piggybank.ui.theme.SoftMint
 import com.example.piggybank.ui.theme.TextPrimary
 import com.example.piggybank.ui.theme.TextSecondary
+import com.example.piggybank.util.ThousandSeparatorVisualTransformation
+import com.example.piggybank.util.sanitizeNominalInput
 import com.example.piggybank.util.toRupiah
 import com.example.piggybank.viewmodel.GoalViewModel
 
@@ -128,6 +129,7 @@ fun GoalDetailContent(
     var showDeleteDialog by remember { mutableStateOf(false) }
     var depositInput by remember { mutableStateOf("") }
     var depositError by remember { mutableStateOf<String?>(null) }
+    val thousandSeparator = remember { ThousandSeparatorVisualTransformation() }
 
     Scaffold(
         modifier = modifier.fillMaxSize(),
@@ -196,11 +198,13 @@ fun GoalDetailContent(
                                 depositError = null
                                 showDepositDialog = true
                             },
-                            enabled = !isSubmitting,
+                            enabled = !isSubmitting && !goal.isCompleted,
                             shape = RoundedCornerShape(14.dp),
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = PrimaryTeal,
-                                contentColor = Color.White
+                                containerColor = if (goal.isCompleted) IncomeGreen else PrimaryTeal,
+                                contentColor = Color.White,
+                                disabledContainerColor = IncomeGreen.copy(alpha = 0.85f),
+                                disabledContentColor = Color.White
                             ),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -214,7 +218,7 @@ fun GoalDetailContent(
                                 )
                             } else {
                                 Text(
-                                    text = "Tambah Setoran",
+                                    text = if (goal.isCompleted) "Target Sudah Tercapai" else "Tambah Setoran",
                                     fontSize = 15.sp,
                                     fontWeight = FontWeight.Bold,
                                     color = Color.White
@@ -293,27 +297,16 @@ fun GoalDetailContent(
                                 verticalAlignment = Alignment.CenterVertically,
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                                ) {
-                                    Icon(
-                                        imageVector = Icons.Default.CalendarToday,
-                                        contentDescription = "Tenggat",
-                                        tint = deadlineTint,
-                                        modifier = Modifier.size(14.dp)
-                                    )
-                                    Text(
-                                        text = if (goal.deadline.isNotBlank()) {
-                                            "Tenggat: ${goal.deadline}"
-                                        } else {
-                                            "Tanpa batas tenggat"
-                                        },
-                                        fontSize = 12.sp,
-                                        fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal,
-                                        color = deadlineTint
-                                    )
-                                }
+                                Text(
+                                    text = if (goal.deadline.isNotBlank()) {
+                                        "Target: ${goal.deadline}"
+                                    } else {
+                                        "Tanpa target"
+                                    },
+                                    fontSize = 12.sp,
+                                    fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal,
+                                    color = deadlineTint
+                                )
 
                                 if (isOverdue) {
                                     Surface(
@@ -387,14 +380,14 @@ fun GoalDetailContent(
                                 Surface(
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp),
-                                    color = MintSurfaceTint
+                                    color = PrimaryTeal
                                 ) {
                                     Column(modifier = Modifier.padding(12.dp)) {
                                         Text(
                                             text = "Sudah Terkumpul",
                                             fontSize = 11.sp,
                                             fontWeight = FontWeight.Medium,
-                                            color = PrimaryTeal
+                                            color = SoftMint
                                         )
                                         Spacer(modifier = Modifier.height(4.dp))
                                         Text(
@@ -402,7 +395,7 @@ fun GoalDetailContent(
                                             style = TextStyle(
                                                 fontSize = 15.sp,
                                                 fontWeight = FontWeight.Bold,
-                                                color = DarkTeal,
+                                                color = Color.White,
                                                 fontFeatureSettings = "tnum"
                                             )
                                         )
@@ -445,6 +438,19 @@ fun GoalDetailContent(
                                     fontFeatureSettings = "tnum"
                                 )
                             )
+
+                            if (goal.surplusAmount > 0L) {
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "Kelebihan saldo di atas target: ${goal.surplusAmount.toRupiah()}",
+                                    style = TextStyle(
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Medium,
+                                        color = IncomeGreen,
+                                        fontFeatureSettings = "tnum"
+                                    )
+                                )
+                            }
 
                             HorizontalDivider(
                                 modifier = Modifier.padding(vertical = 16.dp),
@@ -491,11 +497,39 @@ fun GoalDetailContent(
                         fontSize = 13.sp,
                         color = TextSecondary
                     )
-                    Spacer(modifier = Modifier.height(12.dp))
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "Sisa kekurangan: ${goal.remainingAmount.toRupiah()}",
+                            fontSize = 12.sp,
+                            fontWeight = FontWeight.Medium,
+                            color = PrimaryTeal
+                        )
+                        if (goal.remainingAmount > 0L) {
+                            TextButton(
+                                onClick = {
+                                    depositInput = goal.remainingAmount.toString()
+                                    depositError = null
+                                }
+                            ) {
+                                Text(
+                                    text = "Isi Sisa",
+                                    fontSize = 12.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = PrimaryTeal
+                                )
+                            }
+                        }
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
                     OutlinedTextField(
                         value = depositInput,
                         onValueChange = { input ->
-                            depositInput = input.filter { it.isDigit() }
+                            depositInput = sanitizeNominalInput(input)
                             if (depositError != null) depositError = null
                         },
                         label = { Text("Nominal Setoran (Rp)") },
@@ -508,6 +542,7 @@ fun GoalDetailContent(
                         },
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                        visualTransformation = thousandSeparator,
                         shape = RoundedCornerShape(12.dp),
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = PrimaryTeal,
@@ -531,12 +566,21 @@ fun GoalDetailContent(
                 Button(
                     onClick = {
                         val amount = depositInput.toLongOrNull() ?: 0L
-                        if (amount <= 0L) {
-                            depositError = "Nominal setoran harus lebih dari Rp 0."
-                        } else {
-                            depositError = null
-                            onAddDeposit(goal, amount) {
-                                showDepositDialog = false
+                        when {
+                            amount <= 0L -> {
+                                depositError = "Nominal setoran harus lebih dari Rp 0."
+                            }
+                            goal.remainingAmount <= 0L -> {
+                                depositError = "Target tabungan sudah tercapai (100%)."
+                            }
+                            amount > goal.remainingAmount -> {
+                                depositError = "Setoran melebihi sisa kekurangan (${goal.remainingAmount.toRupiah()})."
+                            }
+                            else -> {
+                                depositError = null
+                                onAddDeposit(goal, amount) {
+                                    showDepositDialog = false
+                                }
                             }
                         }
                     },

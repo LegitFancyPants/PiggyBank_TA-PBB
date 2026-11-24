@@ -18,8 +18,9 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.TrendingDown
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material.icons.filled.CalendarToday
-import androidx.compose.material.icons.filled.Check
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -52,6 +53,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.tooling.preview.Preview
@@ -63,15 +65,20 @@ import com.example.piggybank.ui.theme.BackgroundCanvas
 import com.example.piggybank.ui.theme.CardBorder
 import com.example.piggybank.ui.theme.CardSurface
 import com.example.piggybank.ui.theme.ExpenseRed
-import com.example.piggybank.ui.theme.ExpenseTint
 import com.example.piggybank.ui.theme.IncomeGreen
-import com.example.piggybank.ui.theme.IncomeTint
 import com.example.piggybank.ui.theme.OutlineGray
 import com.example.piggybank.ui.theme.PiggyBankTheme
 import com.example.piggybank.ui.theme.PrimaryTeal
 import com.example.piggybank.ui.theme.TextPrimary
 import com.example.piggybank.ui.theme.TextSecondary
+import com.example.piggybank.util.DateIsoVisualTransformation
+import com.example.piggybank.util.ThousandSeparatorVisualTransformation
+import com.example.piggybank.util.formatDateDigitsToIso
+import com.example.piggybank.util.isoDateToUtcMillis
+import com.example.piggybank.util.isValidCalendarDate
 import com.example.piggybank.util.millisToIsoDate
+import com.example.piggybank.util.sanitizeDateDigits
+import com.example.piggybank.util.sanitizeNominalInput
 import com.example.piggybank.util.todayIsoDate
 import com.example.piggybank.viewmodel.TransactionViewModel
 
@@ -153,13 +160,15 @@ fun TransactionFormContent(
     var title by rememberSaveable { mutableStateOf("") }
     var amountText by rememberSaveable { mutableStateOf("") }
     var category by rememberSaveable { mutableStateOf(expenseCategories.first()) }
-    var date by rememberSaveable { mutableStateOf(todayIsoDate()) }
+    var dateDigits by rememberSaveable { mutableStateOf(sanitizeDateDigits(todayIsoDate())) }
     var note by rememberSaveable { mutableStateOf("") }
 
     var isFormInitialized by rememberSaveable(existingTransaction?.id) { mutableStateOf(false) }
     var categoryExpanded by remember { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
+    val thousandSeparator = remember { ThousandSeparatorVisualTransformation() }
+    val dateIsoTransformation = remember { DateIsoVisualTransformation() }
 
     LaunchedEffect(existingTransaction, isEditMode) {
         if (isEditMode && existingTransaction != null && !isFormInitialized) {
@@ -169,7 +178,7 @@ fun TransactionFormContent(
             category = existingTransaction.category.ifBlank {
                 if (type == "income") incomeCategories.first() else expenseCategories.first()
             }
-            date = existingTransaction.date.ifBlank { todayIsoDate() }
+            dateDigits = sanitizeDateDigits(existingTransaction.date.ifBlank { todayIsoDate() })
             note = existingTransaction.note
             isFormInitialized = true
         }
@@ -241,7 +250,7 @@ fun TransactionFormContent(
                         onClick = {
                             val trimmedTitle = title.trim()
                             val parsedAmount = amountText.toLongOrNull() ?: 0L
-                            val trimmedDate = date.trim().ifBlank { todayIsoDate() }
+                            val formattedDate = formatDateDigitsToIso(dateDigits)
 
                             when {
                                 trimmedTitle.isEmpty() -> {
@@ -249,6 +258,12 @@ fun TransactionFormContent(
                                 }
                                 parsedAmount <= 0L -> {
                                     validationError = "Nominal transaksi harus lebih dari Rp 0."
+                                }
+                                dateDigits.isEmpty() -> {
+                                    validationError = "Tanggal transaksi wajib diisi."
+                                }
+                                !isValidCalendarDate(formattedDate) -> {
+                                    validationError = "Tanggal tidak valid. Pastikan sesuai kalender (YYYY-MM-DD)."
                                 }
                                 else -> {
                                     validationError = null
@@ -258,7 +273,7 @@ fun TransactionFormContent(
                                             amount = parsedAmount,
                                             type = type,
                                             category = category,
-                                            date = trimmedDate,
+                                            date = formattedDate,
                                             note = note.trim()
                                         )
                                     )
@@ -331,7 +346,7 @@ fun TransactionFormContent(
             OutlinedTextField(
                 value = amountText,
                 onValueChange = { input ->
-                    amountText = input.filter { it.isDigit() }
+                    amountText = sanitizeNominalInput(input)
                     if (validationError != null) validationError = null
                 },
                 label = { Text("Nominal (Rp)") },
@@ -344,6 +359,7 @@ fun TransactionFormContent(
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                visualTransformation = thousandSeparator,
                 shape = RoundedCornerShape(12.dp),
                 colors = fieldColors,
                 modifier = Modifier.fillMaxWidth()
@@ -391,12 +407,32 @@ fun TransactionFormContent(
                 }
             }
 
+            val formattedDatePreview = formatDateDigitsToIso(dateDigits)
+            val isDateInvalidComplete = dateDigits.length == 8 && !isValidCalendarDate(formattedDatePreview)
+
             OutlinedTextField(
-                value = date,
-                onValueChange = { date = it },
+                value = dateDigits,
+                onValueChange = { input ->
+                    dateDigits = sanitizeDateDigits(input)
+                    if (validationError != null) validationError = null
+                },
                 label = { Text("Tanggal") },
                 placeholder = { Text("YYYY-MM-DD", color = TextSecondary) },
+                isError = isDateInvalidComplete,
+                supportingText = {
+                    Text(
+                        text = if (isDateInvalidComplete) {
+                            "Tanggal tidak valid sesuai kalender"
+                        } else {
+                            "Format YYYY-MM-DD (hanya angka) atau pilih kalender"
+                        },
+                        fontSize = 11.sp,
+                        color = if (isDateInvalidComplete) ExpenseRed else TextSecondary
+                    )
+                },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                visualTransformation = dateIsoTransformation,
                 trailingIcon = {
                     IconButton(onClick = { showDatePicker = true }) {
                         Icon(
@@ -428,14 +464,17 @@ fun TransactionFormContent(
     }
 
     if (showDatePicker) {
-        val datePickerState = rememberDatePickerState()
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = isoDateToUtcMillis(formatDateDigitsToIso(dateDigits))
+        )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { millis ->
-                            date = millisToIsoDate(millis)
+                            dateDigits = sanitizeDateDigits(millisToIsoDate(millis))
+                            if (validationError != null) validationError = null
                         }
                         showDatePicker = false
                     }
@@ -476,17 +515,17 @@ private fun TransactionTypeSelector(
     ) {
         TypeSegmentButton(
             label = "Pengeluaran",
+            icon = Icons.AutoMirrored.Filled.TrendingDown,
             selected = isExpenseSelected,
-            selectedBackground = ExpenseTint,
-            selectedAccent = ExpenseRed,
+            selectedColor = ExpenseRed,
             onClick = { onTypeSelected("expense") },
             modifier = Modifier.weight(1f)
         )
         TypeSegmentButton(
             label = "Pemasukan",
+            icon = Icons.AutoMirrored.Filled.TrendingUp,
             selected = isIncomeSelected,
-            selectedBackground = IncomeTint,
-            selectedAccent = IncomeGreen,
+            selectedColor = IncomeGreen,
             onClick = { onTypeSelected("income") },
             modifier = Modifier.weight(1f)
         )
@@ -496,20 +535,22 @@ private fun TransactionTypeSelector(
 @Composable
 private fun TypeSegmentButton(
     label: String,
+    icon: ImageVector,
     selected: Boolean,
-    selectedBackground: Color,
-    selectedAccent: Color,
+    selectedColor: Color,
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val contentColor = if (selected) Color.White else TextSecondary
+
     Surface(
         onClick = onClick,
         modifier = modifier.height(48.dp),
         shape = RoundedCornerShape(12.dp),
-        color = if (selected) selectedBackground else CardSurface,
+        color = if (selected) selectedColor else CardSurface,
         border = BorderStroke(
-            width = if (selected) 1.5.dp else 1.dp,
-            color = if (selected) selectedAccent else OutlineGray
+            width = 1.dp,
+            color = if (selected) selectedColor else OutlineGray
         )
     ) {
         Row(
@@ -517,20 +558,18 @@ private fun TypeSegmentButton(
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically
         ) {
-            if (selected) {
-                Icon(
-                    imageVector = Icons.Default.Check,
-                    contentDescription = null,
-                    tint = selectedAccent,
-                    modifier = Modifier.size(18.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-            }
+            Icon(
+                imageVector = icon,
+                contentDescription = null,
+                tint = contentColor,
+                modifier = Modifier.size(18.dp)
+            )
+            Spacer(modifier = Modifier.width(6.dp))
             Text(
                 text = label,
                 fontSize = 14.sp,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                color = if (selected) selectedAccent else TextSecondary
+                color = contentColor
             )
         }
     }

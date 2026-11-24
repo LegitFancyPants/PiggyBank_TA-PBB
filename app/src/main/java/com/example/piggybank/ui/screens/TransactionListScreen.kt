@@ -2,7 +2,6 @@ package com.example.piggybank.ui.screens
 
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -17,29 +16,39 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.CallMade
 import androidx.compose.material.icons.automirrored.filled.CallReceived
 import androidx.compose.material.icons.automirrored.filled.ReceiptLong
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.FilterChip
-import androidx.compose.material3.FilterChipDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -54,17 +63,17 @@ import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.piggybank.model.Transaction
+import com.example.piggybank.model.TransactionSortOption
+import com.example.piggybank.model.groupTransactionsForDisplay
 import com.example.piggybank.model.sampleTransactions
 import com.example.piggybank.ui.theme.BackgroundCanvas
 import com.example.piggybank.ui.theme.CardBorder
 import com.example.piggybank.ui.theme.CardSurface
 import com.example.piggybank.ui.theme.DarkTeal
 import com.example.piggybank.ui.theme.ExpenseRed
-import com.example.piggybank.ui.theme.ExpenseTint
 import com.example.piggybank.ui.theme.HeroExpenseArrow
 import com.example.piggybank.ui.theme.HeroIncomeArrow
 import com.example.piggybank.ui.theme.IncomeGreen
-import com.example.piggybank.ui.theme.IncomeTint
 import com.example.piggybank.ui.theme.MintSurfaceTint
 import com.example.piggybank.ui.theme.OutlineGray
 import com.example.piggybank.ui.theme.PiggyBankTheme
@@ -72,6 +81,7 @@ import com.example.piggybank.ui.theme.PrimaryTeal
 import com.example.piggybank.ui.theme.SoftMint
 import com.example.piggybank.ui.theme.TextPrimary
 import com.example.piggybank.ui.theme.TextSecondary
+import com.example.piggybank.util.formatDateWithDay
 import com.example.piggybank.util.toRupiah
 import com.example.piggybank.util.transactionCategoryIcon
 import com.example.piggybank.viewmodel.TransactionFilter
@@ -90,6 +100,8 @@ fun TransactionListScreen(
     TransactionListContent(
         uiState = uiState,
         onFilterSelected = viewModel::setFilter,
+        onSearchQueryChange = viewModel::setSearchQuery,
+        onSortOptionSelected = viewModel::setSortOption,
         onTransactionClick = onTransactionClick,
         onAddTransactionClick = onAddTransactionClick,
         onRefresh = viewModel::fetchTransactions,
@@ -101,6 +113,8 @@ fun TransactionListScreen(
 fun TransactionListContent(
     uiState: TransactionUiState,
     onFilterSelected: (TransactionFilter) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onSortOptionSelected: (TransactionSortOption) -> Unit,
     onTransactionClick: (Long) -> Unit,
     onAddTransactionClick: () -> Unit,
     onRefresh: () -> Unit,
@@ -149,10 +163,20 @@ fun TransactionListContent(
             }
 
             item {
+                TransactionSearchAndSortBar(
+                    searchQuery = uiState.searchQuery,
+                    onSearchQueryChange = onSearchQueryChange,
+                    selectedSortOption = uiState.selectedSortOption,
+                    onSortOptionSelected = onSortOptionSelected,
+                    modifier = Modifier.padding(horizontal = 16.dp)
+                )
+            }
+
+            item {
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 4.dp),
+                        .padding(horizontal = 16.dp, vertical = 2.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -182,22 +206,38 @@ fun TransactionListContent(
                         CircularProgressIndicator(color = PrimaryTeal)
                     }
                 }
-            } else if (uiState.filteredTransactions.isEmpty()) {
+            } else if (uiState.groupedTransactions.isEmpty()) {
                 item {
                     EmptyTransactionsCard(
+                        hasAnyTransactions = uiState.allTransactions.isNotEmpty(),
+                        searchQuery = uiState.searchQuery,
+                        selectedFilter = uiState.selectedFilter,
+                        onClearSearch = { onSearchQueryChange("") },
                         modifier = Modifier.padding(horizontal = 16.dp)
                     )
                 }
             } else {
-                items(
-                    items = uiState.filteredTransactions,
-                    key = { it.id }
-                ) { transaction ->
-                    TransactionItemCard(
-                        transaction = transaction,
-                        onClick = { onTransactionClick(transaction.id) },
-                        modifier = Modifier.padding(horizontal = 16.dp)
-                    )
+                uiState.groupedTransactions.forEachIndexed { groupIndex, group ->
+                    item(key = "group_${groupIndex}_${group.date}") {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            DailyTransactionHeader(
+                                date = group.date,
+                                totalIncome = group.totalIncome,
+                                totalExpense = group.totalExpense
+                            )
+                            group.transactions.forEach { transaction ->
+                                TransactionItemCard(
+                                    transaction = transaction,
+                                    onClick = { onTransactionClick(transaction.id) }
+                                )
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -234,21 +274,13 @@ private fun TransactionTopBar(
         Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Box(
-                modifier = Modifier
-                    .size(40.dp)
-                    .clip(CircleShape)
-                    .background(SoftMint),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Savings,
-                    contentDescription = "Logo PiggyBank",
-                    tint = PrimaryTeal,
-                    modifier = Modifier.size(22.dp)
-                )
-            }
-            Spacer(modifier = Modifier.width(10.dp))
+            Icon(
+                imageVector = Icons.Default.Savings,
+                contentDescription = "Logo PiggyBank",
+                tint = PrimaryTeal,
+                modifier = Modifier.size(28.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
             Text(
                 text = "PiggyBank",
                 fontSize = 20.sp,
@@ -257,21 +289,12 @@ private fun TransactionTopBar(
             )
         }
 
-        Box(
-            modifier = Modifier
-                .clip(CircleShape)
-                .background(CardSurface)
-                .border(width = 1.dp, color = CardBorder, shape = CircleShape)
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            contentAlignment = Alignment.Center
-        ) {
-            Text(
-                text = "Nov 2026",
-                fontSize = 12.sp,
-                fontWeight = FontWeight.Medium,
-                color = TextSecondary
-            )
-        }
+        Text(
+            text = "Nov 2026",
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            color = TextSecondary
+        )
     }
 }
 
@@ -455,31 +478,200 @@ private fun FilterChipsRow(
     ) {
         TransactionFilter.entries.forEach { filter ->
             val isSelected = selectedFilter == filter
-            FilterChip(
-                selected = isSelected,
+            Surface(
                 onClick = { onFilterSelected(filter) },
-                label = {
+                modifier = Modifier
+                    .weight(1f)
+                    .height(38.dp),
+                shape = CircleShape,
+                color = if (isSelected) PrimaryTeal else CardSurface,
+                border = if (isSelected) null else BorderStroke(1.dp, OutlineGray)
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
                     Text(
                         text = filter.label,
-                        fontSize = 13.sp,
-                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (isSelected) Color.White else TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
                     )
-                },
-                shape = CircleShape,
-                colors = FilterChipDefaults.filterChipColors(
-                    containerColor = CardSurface,
-                    labelColor = TextSecondary,
-                    selectedContainerColor = PrimaryTeal,
-                    selectedLabelColor = Color.White
-                ),
-                border = FilterChipDefaults.filterChipBorder(
-                    enabled = true,
-                    selected = isSelected,
-                    borderColor = OutlineGray,
-                    borderWidth = 1.dp,
-                    selectedBorderColor = Color.Transparent,
-                    selectedBorderWidth = 0.dp
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun TransactionSearchAndSortBar(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    selectedSortOption: TransactionSortOption,
+    onSortOptionSelected: (TransactionSortOption) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            placeholder = {
+                Text(
+                    text = "Cari transaksi...",
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Cari",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { onSearchQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Hapus pencarian",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = CardSurface,
+                unfocusedContainerColor = CardSurface,
+                focusedBorderColor = PrimaryTeal,
+                unfocusedBorderColor = CardBorder,
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary,
+                cursorColor = PrimaryTeal
+            ),
+            modifier = Modifier.weight(1f)
+        )
+
+        Box {
+            Surface(
+                onClick = { sortMenuExpanded = true },
+                shape = RoundedCornerShape(14.dp),
+                color = CardSurface,
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (sortMenuExpanded) PrimaryTeal else CardBorder
+                ),
+                modifier = Modifier.size(56.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Sort,
+                        contentDescription = "Urutkan transaksi",
+                        tint = PrimaryTeal,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
+            }
+
+            DropdownMenu(
+                expanded = sortMenuExpanded,
+                onDismissRequest = { sortMenuExpanded = false },
+                containerColor = CardSurface
+            ) {
+                TransactionSortOption.entries.forEach { option ->
+                    val isSelected = option == selectedSortOption
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = option.label,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (isSelected) PrimaryTeal else TextPrimary
+                            )
+                        },
+                        trailingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = PrimaryTeal,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        onClick = {
+                            onSortOptionSelected(option)
+                            sortMenuExpanded = false
+                        }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DailyTransactionHeader(
+    date: String,
+    totalIncome: Long,
+    totalExpense: Long,
+    modifier: Modifier = Modifier
+) {
+    val summaryText = when {
+        totalIncome > 0L && totalExpense > 0L ->
+            "Masuk: ${totalIncome.toRupiah()}  •  Keluar: ${totalExpense.toRupiah()}"
+        totalIncome > 0L ->
+            "Pemasukan: ${totalIncome.toRupiah()}"
+        totalExpense > 0L ->
+            "Pengeluaran: ${totalExpense.toRupiah()}"
+        else -> ""
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = 2.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = formatDateWithDay(date),
+            fontSize = 12.sp,
+            fontWeight = FontWeight.Medium,
+            color = TextSecondary,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+        if (summaryText.isNotEmpty()) {
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = summaryText,
+                style = TextStyle(
+                    fontSize = 12.sp,
+                    fontWeight = FontWeight.Medium,
+                    color = TextSecondary,
+                    fontFeatureSettings = "tnum"
+                ),
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
         }
     }
@@ -492,8 +684,8 @@ private fun TransactionItemCard(
     modifier: Modifier = Modifier
 ) {
     val isIncome = transaction.type.equals("income", ignoreCase = true)
-    val iconBackground = if (isIncome) IncomeTint else ExpenseTint
-    val iconTint = if (isIncome) IncomeGreen else ExpenseRed
+    val iconBackground = if (isIncome) IncomeGreen else ExpenseRed
+    val iconTint = Color.White
     val amountColor = if (isIncome) IncomeGreen else ExpenseRed
     val formattedAmount = transaction.amount.toRupiah(prefix = if (isIncome) "+" else "-")
 
@@ -543,7 +735,7 @@ private fun TransactionItemCard(
                 )
                 Spacer(modifier = Modifier.height(2.dp))
                 Text(
-                    text = "${transaction.category} • ${transaction.date}",
+                    text = transaction.category,
                     fontSize = 12.sp,
                     fontWeight = FontWeight.Normal,
                     color = TextSecondary,
@@ -570,8 +762,24 @@ private fun TransactionItemCard(
 
 @Composable
 private fun EmptyTransactionsCard(
+    hasAnyTransactions: Boolean,
+    searchQuery: String,
+    selectedFilter: TransactionFilter,
+    onClearSearch: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val trimmedQuery = searchQuery.trim()
+    val titleText = when {
+        !hasAnyTransactions -> "Belum ada catatan transaksi"
+        trimmedQuery.isNotEmpty() -> "Transaksi \"$trimmedQuery\" tidak ditemukan"
+        else -> "Belum ada transaksi ${selectedFilter.label.lowercase()}"
+    }
+    val subtitleText = when {
+        !hasAnyTransactions -> "Tekan tombol + di kanan bawah untuk mencatat pemasukan atau pengeluaran baru."
+        trimmedQuery.isNotEmpty() -> "Coba gunakan kata kunci judul atau kategori yang lain."
+        else -> "Tambahkan transaksi baru atau ubah filter untuk melihat catatan lainnya."
+    }
+
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -593,7 +801,7 @@ private fun EmptyTransactionsCard(
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.AutoMirrored.Filled.ReceiptLong,
+                    imageVector = if (trimmedQuery.isNotEmpty()) Icons.Default.Search else Icons.AutoMirrored.Filled.ReceiptLong,
                     contentDescription = null,
                     tint = PrimaryTeal,
                     modifier = Modifier.size(24.dp)
@@ -601,7 +809,7 @@ private fun EmptyTransactionsCard(
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Belum ada catatan transaksi",
+                text = titleText,
                 fontSize = 15.sp,
                 fontWeight = FontWeight.SemiBold,
                 color = TextPrimary,
@@ -609,11 +817,22 @@ private fun EmptyTransactionsCard(
             )
             Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Tekan tombol + di kanan bawah untuk mencatat pemasukan atau pengeluaran baru.",
+                text = subtitleText,
                 fontSize = 12.sp,
                 color = TextSecondary,
                 textAlign = TextAlign.Center
             )
+            if (hasAnyTransactions && trimmedQuery.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = onClearSearch) {
+                    Text(
+                        text = "Hapus Pencarian",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryTeal
+                    )
+                }
+            }
         }
     }
 }
@@ -629,6 +848,7 @@ private fun TransactionListScreenPreview() {
             uiState = TransactionUiState(
                 allTransactions = samples,
                 filteredTransactions = samples,
+                groupedTransactions = groupTransactionsForDisplay(samples),
                 selectedFilter = TransactionFilter.ALL,
                 totalIncome = totalIncome,
                 totalExpense = totalExpense,
@@ -636,6 +856,8 @@ private fun TransactionListScreenPreview() {
                 isLoading = false
             ),
             onFilterSelected = {},
+            onSearchQueryChange = {},
+            onSortOptionSelected = {},
             onTransactionClick = {},
             onAddTransactionClick = {},
             onRefresh = {}

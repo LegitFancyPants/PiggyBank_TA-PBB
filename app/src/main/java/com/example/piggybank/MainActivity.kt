@@ -12,6 +12,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AccountBalanceWallet
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.outlined.AccountBalanceWallet
+import androidx.compose.material.icons.outlined.Person
+import androidx.compose.material.icons.outlined.Savings
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
@@ -35,10 +38,11 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
-import com.example.piggybank.ui.screens.AboutScreen
+import com.example.piggybank.ui.screens.AboutDetailScreen
 import com.example.piggybank.ui.screens.GoalDetailScreen
 import com.example.piggybank.ui.screens.GoalFormScreen
 import com.example.piggybank.ui.screens.GoalListScreen
+import com.example.piggybank.ui.screens.ProfileScreen
 import com.example.piggybank.ui.screens.TransactionDetailScreen
 import com.example.piggybank.ui.screens.TransactionFormScreen
 import com.example.piggybank.ui.screens.TransactionListScreen
@@ -46,7 +50,6 @@ import com.example.piggybank.ui.theme.BackgroundCanvas
 import com.example.piggybank.ui.theme.CardBorder
 import com.example.piggybank.ui.theme.PiggyBankTheme
 import com.example.piggybank.ui.theme.PrimaryTeal
-import com.example.piggybank.ui.theme.SoftMint
 import com.example.piggybank.ui.theme.TextSecondary
 import com.example.piggybank.viewmodel.GoalViewModel
 import com.example.piggybank.viewmodel.TransactionViewModel
@@ -54,7 +57,8 @@ import com.example.piggybank.viewmodel.TransactionViewModel
 private data class BottomNavItem(
     val label: String,
     val route: String,
-    val icon: ImageVector
+    val selectedIcon: ImageVector,
+    val unselectedIcon: ImageVector
 )
 
 class MainActivity : ComponentActivity() {
@@ -88,17 +92,20 @@ fun PiggyBankApp() {
         BottomNavItem(
             label = "Kas",
             route = Screen.Transactions.route,
-            icon = Icons.Default.AccountBalanceWallet
+            selectedIcon = Icons.Filled.AccountBalanceWallet,
+            unselectedIcon = Icons.Outlined.AccountBalanceWallet
         ),
         BottomNavItem(
             label = "Celengan",
             route = Screen.Goals.route,
-            icon = Icons.Default.Savings
+            selectedIcon = Icons.Filled.Savings,
+            unselectedIcon = Icons.Outlined.Savings
         ),
         BottomNavItem(
             label = "Profil",
             route = Screen.About.route,
-            icon = Icons.Default.Person
+            selectedIcon = Icons.Filled.Person,
+            unselectedIcon = Icons.Outlined.Person
         )
     )
 
@@ -137,7 +144,7 @@ fun PiggyBankApp() {
                                 },
                                 icon = {
                                     Icon(
-                                        imageVector = item.icon,
+                                        imageVector = if (selected) item.selectedIcon else item.unselectedIcon,
                                         contentDescription = item.label
                                     )
                                 },
@@ -145,13 +152,13 @@ fun PiggyBankApp() {
                                     Text(
                                         text = item.label,
                                         fontSize = 12.sp,
-                                        fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium
+                                        fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
                                     )
                                 },
                                 colors = NavigationBarItemDefaults.colors(
                                     selectedIconColor = PrimaryTeal,
                                     selectedTextColor = PrimaryTeal,
-                                    indicatorColor = SoftMint,
+                                    indicatorColor = Color.Transparent,
                                     unselectedIconColor = TextSecondary,
                                     unselectedTextColor = TextSecondary
                                 )
@@ -267,9 +274,22 @@ fun PiggyBankApp() {
                 )
             }
 
-            // Layar 7: Profil & Tentang Aplikasi
+            // Layar 7: Profil Pengguna
             composable(Screen.About.route) {
-                AboutScreen()
+                ProfileScreen(
+                    transactionViewModel = transactionViewModel,
+                    goalViewModel = goalViewModel,
+                    onAboutDetailClick = {
+                        navController.navigate(Screen.AboutDetail.route)
+                    }
+                )
+            }
+
+            // Layar 8: Sub-halaman Tentang Aplikasi
+            composable(Screen.AboutDetail.route) {
+                AboutDetailScreen(
+                    onBackClick = { navController.popBackStack() }
+                )
             }
         }
     }

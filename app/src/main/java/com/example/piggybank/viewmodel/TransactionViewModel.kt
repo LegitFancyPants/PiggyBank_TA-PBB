@@ -2,8 +2,12 @@ package com.example.piggybank.viewmodel
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.piggybank.model.DailyTransactionGroup
 import com.example.piggybank.model.Transaction
 import com.example.piggybank.model.TransactionRequest
+import com.example.piggybank.model.TransactionSortOption
+import com.example.piggybank.model.filterAndSortTransactions
+import com.example.piggybank.model.groupTransactionsForDisplay
 import com.example.piggybank.model.sampleTransactions
 import com.example.piggybank.network.ApiClient
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -23,7 +27,10 @@ enum class TransactionFilter(val label: String) {
 data class TransactionUiState(
     val allTransactions: List<Transaction> = emptyList(),
     val filteredTransactions: List<Transaction> = emptyList(),
+    val groupedTransactions: List<DailyTransactionGroup> = emptyList(),
     val selectedFilter: TransactionFilter = TransactionFilter.ALL,
+    val searchQuery: String = "",
+    val selectedSortOption: TransactionSortOption = TransactionSortOption.NEWEST,
     val totalIncome: Long = 0L,
     val totalExpense: Long = 0L,
     val netBalance: Long = 0L,
@@ -86,10 +93,17 @@ class TransactionViewModel : ViewModel() {
                     } else {
                         current.allTransactions
                     }
+                    val filtered = computeFilteredTransactions(
+                        transactions = updatedList,
+                        filter = current.selectedFilter,
+                        searchQuery = current.searchQuery,
+                        sortOption = current.selectedSortOption
+                    )
                     current.copy(
                         selectedTransaction = remote,
                         allTransactions = updatedList,
-                        filteredTransactions = filterTransactions(updatedList, current.selectedFilter),
+                        filteredTransactions = filtered,
+                        groupedTransactions = groupTransactionsForDisplay(filtered, current.selectedSortOption),
                         isDetailLoading = false
                     )
                 }
@@ -276,9 +290,48 @@ class TransactionViewModel : ViewModel() {
 
     fun setFilter(filter: TransactionFilter) {
         _uiState.update { current ->
+            val filtered = computeFilteredTransactions(
+                transactions = current.allTransactions,
+                filter = filter,
+                searchQuery = current.searchQuery,
+                sortOption = current.selectedSortOption
+            )
             current.copy(
                 selectedFilter = filter,
-                filteredTransactions = filterTransactions(current.allTransactions, filter)
+                filteredTransactions = filtered,
+                groupedTransactions = groupTransactionsForDisplay(filtered, current.selectedSortOption)
+            )
+        }
+    }
+
+    fun setSearchQuery(query: String) {
+        _uiState.update { current ->
+            val filtered = computeFilteredTransactions(
+                transactions = current.allTransactions,
+                filter = current.selectedFilter,
+                searchQuery = query,
+                sortOption = current.selectedSortOption
+            )
+            current.copy(
+                searchQuery = query,
+                filteredTransactions = filtered,
+                groupedTransactions = groupTransactionsForDisplay(filtered, current.selectedSortOption)
+            )
+        }
+    }
+
+    fun setSortOption(sortOption: TransactionSortOption) {
+        _uiState.update { current ->
+            val filtered = computeFilteredTransactions(
+                transactions = current.allTransactions,
+                filter = current.selectedFilter,
+                searchQuery = current.searchQuery,
+                sortOption = sortOption
+            )
+            current.copy(
+                selectedSortOption = sortOption,
+                filteredTransactions = filtered,
+                groupedTransactions = groupTransactionsForDisplay(filtered, sortOption)
             )
         }
     }
@@ -305,9 +358,16 @@ class TransactionViewModel : ViewModel() {
         val netBalance = totalIncome - totalExpense
 
         _uiState.update { current ->
+            val filtered = computeFilteredTransactions(
+                transactions = transactions,
+                filter = current.selectedFilter,
+                searchQuery = current.searchQuery,
+                sortOption = current.selectedSortOption
+            )
             current.copy(
                 allTransactions = transactions,
-                filteredTransactions = filterTransactions(transactions, current.selectedFilter),
+                filteredTransactions = filtered,
+                groupedTransactions = groupTransactionsForDisplay(filtered, current.selectedSortOption),
                 totalIncome = totalIncome,
                 totalExpense = totalExpense,
                 netBalance = netBalance,
@@ -318,12 +378,22 @@ class TransactionViewModel : ViewModel() {
         }
     }
 
-    private fun filterTransactions(
+    private fun computeFilteredTransactions(
         transactions: List<Transaction>,
-        filter: TransactionFilter
-    ): List<Transaction> = when (filter) {
-        TransactionFilter.ALL -> transactions
-        TransactionFilter.INCOME -> transactions.filter { it.type.equals("income", ignoreCase = true) }
-        TransactionFilter.EXPENSE -> transactions.filter { it.type.equals("expense", ignoreCase = true) }
+        filter: TransactionFilter,
+        searchQuery: String,
+        sortOption: TransactionSortOption
+    ): List<Transaction> {
+        val typeFilter = when (filter) {
+            TransactionFilter.ALL -> null
+            TransactionFilter.INCOME -> "income"
+            TransactionFilter.EXPENSE -> "expense"
+        }
+        return filterAndSortTransactions(
+            transactions = transactions,
+            typeFilter = typeFilter,
+            searchQuery = searchQuery,
+            sortOption = sortOption
+        )
     }
 }

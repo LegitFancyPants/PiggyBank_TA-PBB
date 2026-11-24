@@ -58,7 +58,14 @@ import com.example.piggybank.ui.theme.PiggyBankTheme
 import com.example.piggybank.ui.theme.PrimaryTeal
 import com.example.piggybank.ui.theme.TextPrimary
 import com.example.piggybank.ui.theme.TextSecondary
+import com.example.piggybank.util.DateIsoVisualTransformation
+import com.example.piggybank.util.ThousandSeparatorVisualTransformation
+import com.example.piggybank.util.formatDateDigitsToIso
+import com.example.piggybank.util.isoDateToUtcMillis
+import com.example.piggybank.util.isValidCalendarDate
 import com.example.piggybank.util.millisToIsoDate
+import com.example.piggybank.util.sanitizeDateDigits
+import com.example.piggybank.util.sanitizeNominalInput
 import com.example.piggybank.viewmodel.GoalViewModel
 
 @Composable
@@ -122,19 +129,21 @@ fun GoalFormContent(
     var name by rememberSaveable { mutableStateOf("") }
     var targetAmountText by rememberSaveable { mutableStateOf("") }
     var currentAmountText by rememberSaveable { mutableStateOf("0") }
-    var deadline by rememberSaveable { mutableStateOf("") }
+    var deadlineDigits by rememberSaveable { mutableStateOf("") }
     var note by rememberSaveable { mutableStateOf("") }
 
     var isFormInitialized by rememberSaveable(existingGoal?.id) { mutableStateOf(false) }
     var showDatePicker by remember { mutableStateOf(false) }
     var validationError by remember { mutableStateOf<String?>(null) }
+    val thousandSeparator = remember { ThousandSeparatorVisualTransformation() }
+    val dateIsoTransformation = remember { DateIsoVisualTransformation() }
 
     LaunchedEffect(existingGoal, isEditMode) {
         if (isEditMode && existingGoal != null && !isFormInitialized) {
             name = existingGoal.name
             targetAmountText = existingGoal.targetAmount.toString()
             currentAmountText = existingGoal.currentAmount.toString()
-            deadline = existingGoal.deadline
+            deadlineDigits = sanitizeDateDigits(existingGoal.deadline)
             note = existingGoal.note
             isFormInitialized = true
         }
@@ -205,6 +214,7 @@ fun GoalFormContent(
                             val trimmedName = name.trim()
                             val parsedTarget = targetAmountText.toLongOrNull() ?: 0L
                             val parsedCurrent = currentAmountText.toLongOrNull() ?: 0L
+                            val formattedDeadline = formatDateDigitsToIso(deadlineDigits)
 
                             when {
                                 trimmedName.isEmpty() -> {
@@ -213,6 +223,12 @@ fun GoalFormContent(
                                 parsedTarget <= 0L -> {
                                     validationError = "Nominal target harus lebih dari Rp 0."
                                 }
+                                parsedCurrent > parsedTarget -> {
+                                    validationError = "Saldo terkumpul tidak boleh melebihi nominal target."
+                                }
+                                deadlineDigits.isNotEmpty() && !isValidCalendarDate(formattedDeadline) -> {
+                                    validationError = "Tanggal target tidak valid. Pastikan sesuai kalender (YYYY-MM-DD)."
+                                }
                                 else -> {
                                     validationError = null
                                     onSubmit(
@@ -220,7 +236,7 @@ fun GoalFormContent(
                                             name = trimmedName,
                                             targetAmount = parsedTarget,
                                             currentAmount = parsedCurrent.coerceAtLeast(0L),
-                                            deadline = deadline.trim(),
+                                            deadline = if (deadlineDigits.isEmpty()) "" else formattedDeadline,
                                             note = note.trim()
                                         )
                                     )
@@ -280,7 +296,7 @@ fun GoalFormContent(
             OutlinedTextField(
                 value = targetAmountText,
                 onValueChange = { input ->
-                    targetAmountText = input.filter { it.isDigit() }
+                    targetAmountText = sanitizeNominalInput(input)
                     if (validationError != null) validationError = null
                 },
                 label = { Text("Nominal Target (Rp)") },
@@ -293,6 +309,7 @@ fun GoalFormContent(
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                visualTransformation = thousandSeparator,
                 shape = RoundedCornerShape(12.dp),
                 colors = fieldColors,
                 modifier = Modifier.fillMaxWidth()
@@ -301,7 +318,8 @@ fun GoalFormContent(
             OutlinedTextField(
                 value = currentAmountText,
                 onValueChange = { input ->
-                    currentAmountText = input.filter { it.isDigit() }
+                    currentAmountText = sanitizeNominalInput(input)
+                    if (validationError != null) validationError = null
                 },
                 label = { Text("Saldo Awal Terkumpul (Rp)") },
                 prefix = {
@@ -320,17 +338,38 @@ fun GoalFormContent(
                 },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                visualTransformation = thousandSeparator,
                 shape = RoundedCornerShape(12.dp),
                 colors = fieldColors,
                 modifier = Modifier.fillMaxWidth()
             )
 
+            val formattedDeadlinePreview = formatDateDigitsToIso(deadlineDigits)
+            val isDeadlineInvalidComplete = deadlineDigits.length == 8 && !isValidCalendarDate(formattedDeadlinePreview)
+
             OutlinedTextField(
-                value = deadline,
-                onValueChange = { deadline = it },
+                value = deadlineDigits,
+                onValueChange = { input ->
+                    deadlineDigits = sanitizeDateDigits(input)
+                    if (validationError != null) validationError = null
+                },
                 label = { Text("Tenggat Waktu / Deadline (Opsional)") },
                 placeholder = { Text("YYYY-MM-DD", color = TextSecondary) },
+                isError = isDeadlineInvalidComplete,
+                supportingText = {
+                    Text(
+                        text = if (isDeadlineInvalidComplete) {
+                            "Tanggal target tidak valid sesuai kalender"
+                        } else {
+                            "Opsional, format YYYY-MM-DD (hanya angka)"
+                        },
+                        fontSize = 11.sp,
+                        color = if (isDeadlineInvalidComplete) ExpenseRed else TextSecondary
+                    )
+                },
                 singleLine = true,
+                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+                visualTransformation = dateIsoTransformation,
                 trailingIcon = {
                     IconButton(onClick = { showDatePicker = true }) {
                         Icon(
@@ -362,14 +401,17 @@ fun GoalFormContent(
     }
 
     if (showDatePicker) {
-        val datePickerState = rememberDatePickerState()
+        val datePickerState = rememberDatePickerState(
+            initialSelectedDateMillis = isoDateToUtcMillis(formatDateDigitsToIso(deadlineDigits))
+        )
         DatePickerDialog(
             onDismissRequest = { showDatePicker = false },
             confirmButton = {
                 TextButton(
                     onClick = {
                         datePickerState.selectedDateMillis?.let { millis ->
-                            deadline = millisToIsoDate(millis)
+                            deadlineDigits = sanitizeDateDigits(millisToIsoDate(millis))
+                            if (validationError != null) validationError = null
                         }
                         showDatePicker = false
                     }

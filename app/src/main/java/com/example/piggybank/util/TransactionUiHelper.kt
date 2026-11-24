@@ -7,7 +7,12 @@ import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ShoppingBag
 import androidx.compose.material.icons.filled.TwoWheeler
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.input.OffsetMapping
+import androidx.compose.ui.text.input.TransformedText
+import androidx.compose.ui.text.input.VisualTransformation
 import java.text.SimpleDateFormat
+import java.util.Calendar
 import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
@@ -15,6 +20,10 @@ import java.util.TimeZone
 private val indonesianMonths = listOf(
     "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
     "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
+)
+
+private val indonesianDays = listOf(
+    "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"
 )
 
 fun transactionCategoryIcon(category: String): ImageVector = when (category.trim().lowercase()) {
@@ -35,6 +44,32 @@ fun formatDisplayDate(isoDate: String): String {
     return "$day ${indonesianMonths[month - 1]} $year"
 }
 
+fun formatDateWithDay(
+    isoDate: String,
+    referenceYear: Int = Calendar.getInstance().get(Calendar.YEAR)
+): String {
+    val trimmed = isoDate.trim()
+    if (!isValidCalendarDate(trimmed)) return trimmed
+    return try {
+        val parser = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            isLenient = false
+        }
+        val parsed = parser.parse(trimmed) ?: return trimmed
+        val calendar = Calendar.getInstance().apply { time = parsed }
+        val day = calendar.get(Calendar.DAY_OF_MONTH)
+        val month = indonesianMonths[calendar.get(Calendar.MONTH)]
+        val year = calendar.get(Calendar.YEAR)
+        val dayName = indonesianDays[calendar.get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY]
+        if (year == referenceYear) {
+            "$day $month  $dayName"
+        } else {
+            "$day $month $year  $dayName"
+        }
+    } catch (_: Exception) {
+        trimmed
+    }
+}
+
 fun todayIsoDate(): String {
     val formatter = SimpleDateFormat("yyyy-MM-dd", Locale.US)
     return formatter.format(Date())
@@ -48,6 +83,88 @@ fun millisToIsoDate(utcMillis: Long): String {
 }
 
 private val isoDateRegex = Regex("""^\d{4}-\d{2}-\d{2}$""")
+
+fun sanitizeDateDigits(input: String): String =
+    input.filter { it.isDigit() }.take(8)
+
+fun formatDateDigitsToIso(digits: String): String {
+    val clean = sanitizeDateDigits(digits)
+    return when {
+        clean.length <= 4 -> clean
+        clean.length <= 6 -> "${clean.substring(0, 4)}-${clean.substring(4)}"
+        else -> "${clean.substring(0, 4)}-${clean.substring(4, 6)}-${clean.substring(6)}"
+    }
+}
+
+fun isValidCalendarDate(isoDate: String): Boolean {
+    val trimmed = isoDate.trim()
+    if (!isoDateRegex.matches(trimmed)) return false
+    val year = trimmed.substring(0, 4).toIntOrNull() ?: return false
+    if (year !in 1900..2100) return false
+    return try {
+        val parser = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            isLenient = false
+        }
+        val parsed = parser.parse(trimmed) ?: return false
+        parser.format(parsed) == trimmed
+    } catch (_: Exception) {
+        false
+    }
+}
+
+fun isoDateToUtcMillis(isoDate: String): Long? {
+    if (!isValidCalendarDate(isoDate)) return null
+    return try {
+        val parser = SimpleDateFormat("yyyy-MM-dd", Locale.US).apply {
+            timeZone = TimeZone.getTimeZone("UTC")
+            isLenient = false
+        }
+        parser.parse(isoDate.trim())?.time
+    } catch (_: Exception) {
+        null
+    }
+}
+
+class DateIsoVisualTransformation : VisualTransformation {
+    override fun filter(text: AnnotatedString): TransformedText {
+        val original = text.text.take(8)
+        if (original.isEmpty()) {
+            return TransformedText(AnnotatedString(""), OffsetMapping.Identity)
+        }
+
+        val sb = StringBuilder(10)
+        val origToTrans = IntArray(original.length + 1)
+        for (i in original.indices) {
+            origToTrans[i] = sb.length
+            if (i == 4 || i == 6) {
+                sb.append('-')
+            }
+            sb.append(original[i])
+        }
+        val transformed = sb.toString()
+        origToTrans[original.length] = transformed.length
+
+        val transToOrig = IntArray(transformed.length + 1)
+        var digitCount = 0
+        for (i in transformed.indices) {
+            transToOrig[i] = digitCount
+            if (transformed[i] != '-') {
+                digitCount++
+            }
+        }
+        transToOrig[transformed.length] = original.length
+
+        val offsetMapping = object : OffsetMapping {
+            override fun originalToTransformed(offset: Int): Int =
+                origToTrans[offset.coerceIn(0, original.length)]
+
+            override fun transformedToOriginal(offset: Int): Int =
+                transToOrig[offset.coerceIn(0, transformed.length)]
+        }
+
+        return TransformedText(AnnotatedString(transformed), offsetMapping)
+    }
+}
 
 fun isIsoDatePast(isoDate: String, todayIso: String = todayIsoDate()): Boolean {
     val trimmed = isoDate.trim()

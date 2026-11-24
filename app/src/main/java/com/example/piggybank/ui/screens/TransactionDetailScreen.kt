@@ -64,7 +64,6 @@ import com.example.piggybank.ui.theme.CardSurface
 import com.example.piggybank.ui.theme.ExpenseRed
 import com.example.piggybank.ui.theme.ExpenseTint
 import com.example.piggybank.ui.theme.IncomeGreen
-import com.example.piggybank.ui.theme.IncomeTint
 import com.example.piggybank.ui.theme.PiggyBankTheme
 import com.example.piggybank.ui.theme.PrimaryTeal
 import com.example.piggybank.ui.theme.TextPrimary
@@ -248,9 +247,7 @@ fun TransactionDetailContent(
                 }
             } else {
                 val isIncome = transaction.type.equals("income", ignoreCase = true)
-                val badgeBg = if (isIncome) IncomeTint else ExpenseTint
                 val accentColor = if (isIncome) IncomeGreen else ExpenseRed
-                val typeLabel = if (isIncome) "Pemasukan" else "Pengeluaran"
                 val formattedAmount = transaction.amount.toRupiah(prefix = if (isIncome) "+" else "-")
 
                 Column(
@@ -294,35 +291,18 @@ fun TransactionDetailContent(
                                 modifier = Modifier
                                     .size(56.dp)
                                     .clip(CircleShape)
-                                    .background(badgeBg),
+                                    .background(accentColor),
                                 contentAlignment = Alignment.Center
                             ) {
                                 Icon(
                                     imageVector = transactionCategoryIcon(transaction.category),
                                     contentDescription = transaction.category,
-                                    tint = accentColor,
+                                    tint = Color.White,
                                     modifier = Modifier.size(28.dp)
                                 )
                             }
 
-                            Spacer(modifier = Modifier.height(12.dp))
-
-                            Box(
-                                modifier = Modifier
-                                    .clip(CircleShape)
-                                    .background(badgeBg)
-                                    .padding(horizontal = 14.dp, vertical = 4.dp),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Text(
-                                    text = typeLabel,
-                                    fontSize = 12.sp,
-                                    fontWeight = FontWeight.SemiBold,
-                                    color = accentColor
-                                )
-                            }
-
-                            Spacer(modifier = Modifier.height(12.dp))
+                            Spacer(modifier = Modifier.height(14.dp))
 
                             Text(
                                 text = formattedAmount,

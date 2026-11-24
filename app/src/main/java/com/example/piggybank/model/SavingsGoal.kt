@@ -23,13 +23,68 @@ data class SavingsGoal(
 
     val progressPercentage: Int
         get() = (if (targetAmount > 0L) ((currentAmount * 100) / targetAmount).toInt() else 0)
-            .coerceAtLeast(0)
+            .coerceIn(0, 100)
 
     val remainingAmount: Long
         get() = (targetAmount - currentAmount).coerceAtLeast(0L)
 
+    val surplusAmount: Long
+        get() = (currentAmount - targetAmount).coerceAtLeast(0L)
+
+    val isCompleted: Boolean
+        get() = targetAmount > 0L && currentAmount >= targetAmount
+
     fun isOverdue(todayIso: String = todayIsoDate()): Boolean =
         currentAmount < targetAmount && isIsoDatePast(deadline, todayIso)
+}
+
+enum class GoalStatusFilter(val label: String) {
+    ALL("Semua"),
+    IN_PROGRESS("Belum Tercapai"),
+    COMPLETED("Tercapai")
+}
+
+enum class GoalSortOption(val label: String) {
+    ALPHABETICAL("Sesuai Abjad (A–Z)"),
+    OLDEST("Dari Terlama"),
+    NEWEST("Dari Terbaru"),
+    TARGET_DESC("Target Terbesar"),
+    TARGET_ASC("Target Terkecil")
+}
+
+fun filterAndSortGoals(
+    goals: List<SavingsGoal>,
+    statusFilter: GoalStatusFilter = GoalStatusFilter.ALL,
+    searchQuery: String = "",
+    sortOption: GoalSortOption = GoalSortOption.NEWEST
+): List<SavingsGoal> {
+    val keyword = searchQuery.trim()
+    val filtered = goals.filter { goal ->
+        val matchesStatus = when (statusFilter) {
+            GoalStatusFilter.ALL -> true
+            GoalStatusFilter.IN_PROGRESS -> !goal.isCompleted
+            GoalStatusFilter.COMPLETED -> goal.isCompleted
+        }
+        val matchesQuery = keyword.isEmpty() || goal.name.contains(keyword, ignoreCase = true)
+        matchesStatus && matchesQuery
+    }
+
+    return when (sortOption) {
+        GoalSortOption.ALPHABETICAL -> filtered.sortedWith(
+            compareBy<SavingsGoal> { it.name.trim().lowercase() }
+                .thenByDescending { it.id }
+        )
+        GoalSortOption.OLDEST -> filtered.sortedWith { a, b -> compareCreationOrder(a, b) }
+        GoalSortOption.NEWEST -> filtered.sortedWith { a, b -> compareCreationOrder(b, a) }
+        GoalSortOption.TARGET_DESC -> filtered.sortedWith(
+            compareByDescending<SavingsGoal> { it.targetAmount }
+                .thenComparator { a, b -> compareCreationOrder(b, a) }
+        )
+        GoalSortOption.TARGET_ASC -> filtered.sortedWith(
+            compareBy<SavingsGoal> { it.targetAmount }
+                .thenComparator { a, b -> compareCreationOrder(b, a) }
+        )
+    }
 }
 
 fun List<SavingsGoal>.sortedByDeadlineAndCreation(): List<SavingsGoal> =

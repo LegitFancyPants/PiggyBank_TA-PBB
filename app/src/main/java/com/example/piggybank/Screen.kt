@@ -24,4 +24,6 @@ sealed class Screen(val route: String) {
     }
 
     data object About : Screen("about")
+
+    data object AboutDetail : Screen("about_detail")
 }

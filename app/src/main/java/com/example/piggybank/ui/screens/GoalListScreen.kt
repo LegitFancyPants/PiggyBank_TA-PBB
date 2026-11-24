@@ -20,24 +20,35 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Savings
-import androidx.compose.material.icons.filled.Schedule
+import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -49,6 +60,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.piggybank.model.GoalSortOption
+import com.example.piggybank.model.GoalStatusFilter
 import com.example.piggybank.model.SavingsGoal
 import com.example.piggybank.model.sampleSavingsGoals
 import com.example.piggybank.ui.theme.BackgroundCanvas
@@ -57,7 +70,9 @@ import com.example.piggybank.ui.theme.CardSurface
 import com.example.piggybank.ui.theme.DarkTeal
 import com.example.piggybank.ui.theme.ExpenseRed
 import com.example.piggybank.ui.theme.ExpenseTint
+import com.example.piggybank.ui.theme.IncomeGreen
 import com.example.piggybank.ui.theme.MintSurfaceTint
+import com.example.piggybank.ui.theme.OutlineGray
 import com.example.piggybank.ui.theme.PiggyBankTheme
 import com.example.piggybank.ui.theme.PrimaryTeal
 import com.example.piggybank.ui.theme.SoftMint
@@ -78,6 +93,9 @@ fun GoalListScreen(
 
     GoalListContent(
         uiState = uiState,
+        onStatusFilterSelected = viewModel::setStatusFilter,
+        onSearchQueryChange = viewModel::setSearchQuery,
+        onSortOptionSelected = viewModel::setSortOption,
         onGoalClick = onGoalClick,
         onAddGoalClick = onAddGoalClick,
         onRefresh = viewModel::fetchGoals,
@@ -88,6 +106,9 @@ fun GoalListScreen(
 @Composable
 fun GoalListContent(
     uiState: GoalUiState,
+    onStatusFilterSelected: (GoalStatusFilter) -> Unit,
+    onSearchQueryChange: (String) -> Unit,
+    onSortOptionSelected: (GoalSortOption) -> Unit,
     onGoalClick: (Long) -> Unit,
     onAddGoalClick: () -> Unit,
     onRefresh: () -> Unit,
@@ -101,7 +122,7 @@ fun GoalListContent(
         LazyColumn(
             modifier = Modifier.fillMaxSize(),
             contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
-            verticalArrangement = Arrangement.spacedBy(14.dp)
+            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
                 Column(modifier = Modifier.fillMaxWidth()) {
@@ -121,9 +142,18 @@ fun GoalListContent(
             }
 
             item {
-                GoalSummaryBanner(
-                    totalActiveGoals = uiState.totalActiveGoals,
-                    totalSavedAllGoals = uiState.totalSavedAllGoals
+                GoalStatusFilterRow(
+                    selectedFilter = uiState.selectedStatusFilter,
+                    onFilterSelected = onStatusFilterSelected
+                )
+            }
+
+            item {
+                GoalSearchAndSortBar(
+                    searchQuery = uiState.searchQuery,
+                    onSearchQueryChange = onSearchQueryChange,
+                    selectedSortOption = uiState.selectedSortOption,
+                    onSortOptionSelected = onSortOptionSelected
                 )
             }
 
@@ -148,13 +178,18 @@ fun GoalListContent(
                         CircularProgressIndicator(color = PrimaryTeal)
                     }
                 }
-            } else if (uiState.goals.isEmpty()) {
+            } else if (uiState.displayedGoals.isEmpty()) {
                 item {
-                    EmptyGoalsCard()
+                    EmptyGoalsCard(
+                        hasAnyGoals = uiState.goals.isNotEmpty(),
+                        searchQuery = uiState.searchQuery,
+                        selectedStatusFilter = uiState.selectedStatusFilter,
+                        onClearSearch = { onSearchQueryChange("") }
+                    )
                 }
             } else {
                 items(
-                    items = uiState.goals,
+                    items = uiState.displayedGoals,
                     key = { it.id }
                 ) { goal ->
                     SavingsGoalItemCard(
@@ -165,79 +200,178 @@ fun GoalListContent(
             }
         }
 
-        ExtendedFloatingActionButton(
+        FloatingActionButton(
             onClick = onAddGoalClick,
             shape = RoundedCornerShape(16.dp),
             containerColor = PrimaryTeal,
             contentColor = Color.White,
-            icon = {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "Tambah Target"
-                )
-            },
-            text = {
-                Text(
-                    text = "Target Baru",
-                    fontWeight = FontWeight.SemiBold
-                )
-            },
             modifier = Modifier
                 .align(Alignment.BottomEnd)
                 .padding(16.dp)
-        )
+        ) {
+            Icon(
+                imageVector = Icons.Default.Add,
+                contentDescription = "Tambah Target"
+            )
+        }
     }
 }
 
 @Composable
-private fun GoalSummaryBanner(
-    totalActiveGoals: Int,
-    totalSavedAllGoals: Long
+private fun GoalStatusFilterRow(
+    selectedFilter: GoalStatusFilter,
+    onFilterSelected: (GoalStatusFilter) -> Unit
 ) {
-    Surface(
+    Row(
         modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        color = SoftMint
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(14.dp)
-        ) {
-            Box(
+        GoalStatusFilter.entries.forEach { filter ->
+            val isSelected = filter == selectedFilter
+            Surface(
+                onClick = { onFilterSelected(filter) },
                 modifier = Modifier
-                    .size(44.dp)
-                    .clip(CircleShape)
-                    .background(PrimaryTeal),
-                contentAlignment = Alignment.Center
+                    .weight(1f)
+                    .height(38.dp),
+                shape = CircleShape,
+                color = if (isSelected) PrimaryTeal else CardSurface,
+                border = if (isSelected) null else BorderStroke(1.dp, OutlineGray)
             ) {
-                Icon(
-                    imageVector = Icons.Default.Savings,
-                    contentDescription = "Ringkasan Celengan",
-                    tint = Color.White,
-                    modifier = Modifier.size(22.dp)
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = filter.label,
+                        fontSize = 12.sp,
+                        fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+                        color = if (isSelected) Color.White else TextSecondary,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun GoalSearchAndSortBar(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    selectedSortOption: GoalSortOption,
+    onSortOptionSelected: (GoalSortOption) -> Unit
+) {
+    var sortMenuExpanded by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            placeholder = {
+                Text(
+                    text = "Cari nama target...",
+                    fontSize = 14.sp,
+                    color = TextSecondary,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
                 )
+            },
+            leadingIcon = {
+                Icon(
+                    imageVector = Icons.Default.Search,
+                    contentDescription = "Cari",
+                    tint = TextSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            },
+            trailingIcon = {
+                if (searchQuery.isNotEmpty()) {
+                    IconButton(onClick = { onSearchQueryChange("") }) {
+                        Icon(
+                            imageVector = Icons.Default.Close,
+                            contentDescription = "Hapus pencarian",
+                            tint = TextSecondary,
+                            modifier = Modifier.size(18.dp)
+                        )
+                    }
+                }
+            },
+            singleLine = true,
+            shape = RoundedCornerShape(14.dp),
+            colors = OutlinedTextFieldDefaults.colors(
+                focusedContainerColor = CardSurface,
+                unfocusedContainerColor = CardSurface,
+                focusedBorderColor = PrimaryTeal,
+                unfocusedBorderColor = CardBorder,
+                focusedTextColor = TextPrimary,
+                unfocusedTextColor = TextPrimary,
+                cursorColor = PrimaryTeal
+            ),
+            modifier = Modifier.weight(1f)
+        )
+
+        Box {
+            Surface(
+                onClick = { sortMenuExpanded = true },
+                shape = RoundedCornerShape(14.dp),
+                color = CardSurface,
+                border = BorderStroke(
+                    width = 1.dp,
+                    color = if (sortMenuExpanded) PrimaryTeal else CardBorder
+                ),
+                modifier = Modifier.size(56.dp)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Icon(
+                        imageVector = Icons.AutoMirrored.Filled.Sort,
+                        contentDescription = "Urutkan target",
+                        tint = PrimaryTeal,
+                        modifier = Modifier.size(22.dp)
+                    )
+                }
             }
 
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = "$totalActiveGoals Target Aktif",
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = DarkTeal
-                )
-                Spacer(modifier = Modifier.height(2.dp))
-                Text(
-                    text = "Total terkumpul ${totalSavedAllGoals.toRupiah()}",
-                    style = TextStyle(
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.Medium,
-                        color = PrimaryTeal,
-                        fontFeatureSettings = "tnum"
+            DropdownMenu(
+                expanded = sortMenuExpanded,
+                onDismissRequest = { sortMenuExpanded = false },
+                containerColor = CardSurface
+            ) {
+                GoalSortOption.entries.forEach { option ->
+                    val isSelected = option == selectedSortOption
+                    DropdownMenuItem(
+                        text = {
+                            Text(
+                                text = option.label,
+                                fontSize = 14.sp,
+                                fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+                                color = if (isSelected) PrimaryTeal else TextPrimary
+                            )
+                        },
+                        trailingIcon = if (isSelected) {
+                            {
+                                Icon(
+                                    imageVector = Icons.Default.Check,
+                                    contentDescription = null,
+                                    tint = PrimaryTeal,
+                                    modifier = Modifier.size(18.dp)
+                                )
+                            }
+                        } else {
+                            null
+                        },
+                        onClick = {
+                            onSortOptionSelected(option)
+                            sortMenuExpanded = false
+                        }
                     )
-                )
+                }
             }
         }
     }
@@ -300,6 +434,7 @@ private fun SavingsGoalItemCard(
     val isOverdue = goal.isOverdue()
     val cardBorderColor = if (isOverdue) ExpenseRed.copy(alpha = 0.45f) else CardBorder
     val deadlineColor = if (isOverdue) ExpenseRed else TextSecondary
+    val progressAccentColor = if (goal.isCompleted) IncomeGreen else PrimaryTeal
 
     Card(
         modifier = Modifier
@@ -359,14 +494,14 @@ private fun SavingsGoalItemCard(
 
                 Surface(
                     shape = CircleShape,
-                    color = SoftMint
+                    color = progressAccentColor
                 ) {
                     Text(
                         text = "${goal.progressPercentage}%",
                         style = TextStyle(
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
-                            color = PrimaryTeal,
+                            color = Color.White,
                             fontFeatureSettings = "tnum"
                         ),
                         modifier = Modifier.padding(horizontal = 10.dp, vertical = 4.dp)
@@ -382,7 +517,7 @@ private fun SavingsGoalItemCard(
                     .fillMaxWidth()
                     .height(8.dp)
                     .clip(CircleShape),
-                color = PrimaryTeal,
+                color = progressAccentColor,
                 trackColor = CardBorder,
                 drawStopIndicator = {}
             )
@@ -409,30 +544,31 @@ private fun SavingsGoalItemCard(
 
                 Spacer(modifier = Modifier.width(8.dp))
 
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Schedule,
-                        contentDescription = "Tenggat",
-                        tint = deadlineColor,
-                        modifier = Modifier.size(14.dp)
-                    )
-                    Text(
-                        text = if (goal.deadline.isNotBlank()) "Target: ${goal.deadline}" else "Tanpa tenggat",
-                        fontSize = 12.sp,
-                        fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal,
-                        color = deadlineColor
-                    )
-                }
+                Text(
+                    text = if (goal.deadline.isNotBlank()) "Target: ${goal.deadline}" else "Tanpa target",
+                    fontSize = 12.sp,
+                    fontWeight = if (isOverdue) FontWeight.SemiBold else FontWeight.Normal,
+                    color = deadlineColor
+                )
             }
         }
     }
 }
 
 @Composable
-private fun EmptyGoalsCard() {
+private fun EmptyGoalsCard(
+    hasAnyGoals: Boolean,
+    searchQuery: String,
+    selectedStatusFilter: GoalStatusFilter,
+    onClearSearch: () -> Unit
+) {
+    val trimmedQuery = searchQuery.trim()
+    val emptyMessage = when {
+        !hasAnyGoals -> "Belum ada target celengan. Tekan tombol + untuk memulai!"
+        trimmedQuery.isNotEmpty() -> "Target celengan \"$trimmedQuery\" tidak ditemukan."
+        else -> "Belum ada target celengan pada kategori \"${selectedStatusFilter.label}\"."
+    }
+
     Card(
         modifier = Modifier.fillMaxWidth(),
         shape = RoundedCornerShape(16.dp),
@@ -454,7 +590,7 @@ private fun EmptyGoalsCard() {
                 contentAlignment = Alignment.Center
             ) {
                 Icon(
-                    imageVector = Icons.Default.Savings,
+                    imageVector = if (trimmedQuery.isNotEmpty()) Icons.Default.Search else Icons.Default.Savings,
                     contentDescription = null,
                     tint = PrimaryTeal,
                     modifier = Modifier.size(24.dp)
@@ -462,12 +598,23 @@ private fun EmptyGoalsCard() {
             }
             Spacer(modifier = Modifier.height(12.dp))
             Text(
-                text = "Belum ada target celengan. Tekan + Target Baru untuk memulai!",
+                text = emptyMessage,
                 fontSize = 14.sp,
                 fontWeight = FontWeight.Medium,
                 color = TextSecondary,
                 textAlign = TextAlign.Center
             )
+            if (hasAnyGoals && trimmedQuery.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(8.dp))
+                TextButton(onClick = onClearSearch) {
+                    Text(
+                        text = "Hapus Pencarian",
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        color = PrimaryTeal
+                    )
+                }
+            }
         }
     }
 }
@@ -480,10 +627,14 @@ private fun GoalListScreenPreview() {
         GoalListContent(
             uiState = GoalUiState(
                 goals = samples,
+                displayedGoals = samples,
                 totalActiveGoals = samples.size,
                 totalSavedAllGoals = samples.sumOf { it.currentAmount },
                 isLoading = false
             ),
+            onStatusFilterSelected = {},
+            onSearchQueryChange = {},
+            onSortOptionSelected = {},
             onGoalClick = {},
             onAddGoalClick = {},
             onRefresh = {}
