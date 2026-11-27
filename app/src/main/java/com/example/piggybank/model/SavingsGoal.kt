@@ -1,7 +1,7 @@
 package com.example.piggybank.model
 
+import com.example.piggybank.util.compareSyncAwareCreationOrder
 import com.example.piggybank.util.isIsoDatePast
-import com.example.piggybank.util.parseIsoTimestampMillis
 import com.example.piggybank.util.todayIsoDate
 import com.google.gson.annotations.SerializedName
 
@@ -72,7 +72,7 @@ fun filterAndSortGoals(
     return when (sortOption) {
         GoalSortOption.ALPHABETICAL -> filtered.sortedWith(
             compareBy<SavingsGoal> { it.name.trim().lowercase() }
-                .thenByDescending { it.id }
+                .thenComparator { a, b -> compareCreationOrder(b, a) }
         )
         GoalSortOption.OLDEST -> filtered.sortedWith { a, b -> compareCreationOrder(a, b) }
         GoalSortOption.NEWEST -> filtered.sortedWith { a, b -> compareCreationOrder(b, a) }
@@ -101,17 +101,8 @@ fun List<SavingsGoal>.sortedByDeadlineAndCreation(): List<SavingsGoal> =
         }
     }
 
-private fun compareCreationOrder(a: SavingsGoal, b: SavingsGoal): Int {
-    val aTime = parseIsoTimestampMillis(a.createdAt)
-    val bTime = parseIsoTimestampMillis(b.createdAt)
-    if (aTime != null && bTime != null && aTime != bTime) {
-        return aTime.compareTo(bTime)
-    }
-    if (!a.createdAt.isNullOrBlank() && !b.createdAt.isNullOrBlank() && a.createdAt != b.createdAt) {
-        return a.createdAt.compareTo(b.createdAt)
-    }
-    return a.id.compareTo(b.id)
-}
+private fun compareCreationOrder(a: SavingsGoal, b: SavingsGoal): Int =
+    compareSyncAwareCreationOrder(a.id, a.createdAt, b.id, b.createdAt)
 
 data class GoalRequest(
     val name: String,

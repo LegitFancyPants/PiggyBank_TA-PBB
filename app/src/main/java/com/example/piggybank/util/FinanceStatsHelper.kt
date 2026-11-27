@@ -117,6 +117,17 @@ fun calculateAvailableYears(transactions: List<Transaction>): List<Int> =
         .distinct()
         .sortedDescending()
 
+fun buildStatisticYearOptions(
+    transactions: List<Transaction>,
+    minYear: Int = 1900,
+    maxYear: Int = 2100
+): List<Int> {
+    val txYears = calculateAvailableYears(transactions)
+    val effectiveMin = minOf(minYear, txYears.minOrNull() ?: minYear)
+    val effectiveMax = maxOf(maxYear, txYears.maxOrNull() ?: maxYear)
+    return (effectiveMax downTo effectiveMin).toList()
+}
+
 fun calculateMonthlyStatisticsByYear(
     transactions: List<Transaction>,
     filterYear: Int? = null

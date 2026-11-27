@@ -11,14 +11,17 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.KeyboardOptions
@@ -37,8 +40,6 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -56,6 +57,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -66,6 +68,7 @@ import androidx.compose.ui.graphics.Color
 import com.example.piggybank.ui.components.BorderlessEmptyState
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
@@ -74,8 +77,11 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import com.example.piggybank.model.Transaction
 import com.example.piggybank.model.sampleTransactions
 import com.example.piggybank.ui.theme.BackgroundCanvas
@@ -92,7 +98,7 @@ import com.example.piggybank.util.MonthlyStatRow
 import com.example.piggybank.util.ProfilePreferences
 import com.example.piggybank.util.ThousandSeparatorVisualTransformation
 import com.example.piggybank.util.YearMonthSelection
-import com.example.piggybank.util.calculateAvailableYears
+import com.example.piggybank.util.buildStatisticYearOptions
 import com.example.piggybank.util.calculateMonthExpense
 import com.example.piggybank.util.calculateMonthIncome
 import com.example.piggybank.util.calculateMonthlyBudgetUsage
@@ -559,11 +565,12 @@ fun MonthlyStatisticsContent(
     onBackClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    val availableYears = remember(allTransactions) {
-        calculateAvailableYears(allTransactions)
+    val yearOptions = remember(allTransactions) {
+        buildStatisticYearOptions(allTransactions)
     }
     var selectedYear by remember { mutableStateOf<Int?>(null) }
     var yearMenuExpanded by remember { mutableStateOf(false) }
+    var anchorHeightPx by remember { mutableIntStateOf(0) }
 
     val yearlyGroups = remember(allTransactions, selectedYear) {
         calculateMonthlyStatisticsByYear(allTransactions, filterYear = selectedYear)
@@ -604,6 +611,7 @@ fun MonthlyStatisticsContent(
                     Box {
                         Row(
                             modifier = Modifier
+                                .onSizeChanged { anchorHeightPx = it.height }
                                 .clip(RoundedCornerShape(8.dp))
                                 .clickable { yearMenuExpanded = true }
                                 .padding(horizontal = 10.dp, vertical = 6.dp),
@@ -623,60 +631,17 @@ fun MonthlyStatisticsContent(
                             )
                         }
 
-                        DropdownMenu(
-                            expanded = yearMenuExpanded,
-                            onDismissRequest = { yearMenuExpanded = false },
-                            containerColor = CardSurface
-                        ) {
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        text = "Semua",
-                                        fontWeight = if (selectedYear == null) FontWeight.Bold else FontWeight.Normal,
-                                        color = if (selectedYear == null) PrimaryTeal else TextPrimary
-                                    )
-                                },
-                                trailingIcon = if (selectedYear == null) {
-                                    {
-                                        Icon(
-                                            imageVector = Icons.Default.Check,
-                                            contentDescription = null,
-                                            tint = PrimaryTeal,
-                                            modifier = Modifier.size(18.dp)
-                                        )
-                                    }
-                                } else null,
-                                onClick = {
-                                    selectedYear = null
+                        if (yearMenuExpanded) {
+                            YearFilterPopup(
+                                yearOptions = yearOptions,
+                                selectedYear = selectedYear,
+                                anchorHeightPx = anchorHeightPx,
+                                onSelectYear = { year ->
+                                    selectedYear = year
                                     yearMenuExpanded = false
-                                }
+                                },
+                                onDismiss = { yearMenuExpanded = false }
                             )
-                            availableYears.forEach { year ->
-                                val isSelected = selectedYear == year
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            text = year.toString(),
-                                            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-                                            color = if (isSelected) PrimaryTeal else TextPrimary
-                                        )
-                                    },
-                                    trailingIcon = if (isSelected) {
-                                        {
-                                            Icon(
-                                                imageVector = Icons.Default.Check,
-                                                contentDescription = null,
-                                                tint = PrimaryTeal,
-                                                modifier = Modifier.size(18.dp)
-                                            )
-                                        }
-                                    } else null,
-                                    onClick = {
-                                        selectedYear = year
-                                        yearMenuExpanded = false
-                                    }
-                                )
-                            }
                         }
                     }
                 },
@@ -868,6 +833,97 @@ fun MonthlyStatisticsContent(
                     }
                 }
             }
+        }
+    }
+}
+
+@Composable
+private fun YearFilterPopup(
+    yearOptions: List<Int>,
+    selectedYear: Int?,
+    anchorHeightPx: Int,
+    onSelectYear: (Int?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val currentYear = remember { currentYearMonthSelection().year }
+    val targetYear = selectedYear ?: currentYear
+    val initialIndex = remember(yearOptions, targetYear) {
+        val idx = yearOptions.indexOf(targetYear)
+        if (idx >= 0) (idx - 1).coerceAtLeast(0) else 0
+    }
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = initialIndex)
+
+    Popup(
+        alignment = Alignment.TopEnd,
+        offset = IntOffset(0, anchorHeightPx),
+        onDismissRequest = onDismiss,
+        properties = PopupProperties(focusable = true)
+    ) {
+        Surface(
+            modifier = Modifier.width(152.dp),
+            shape = RoundedCornerShape(12.dp),
+            color = CardSurface,
+            border = BorderStroke(1.dp, CardBorder),
+            shadowElevation = 6.dp
+        ) {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                YearFilterRowItem(
+                    label = "Semua",
+                    isSelected = selectedYear == null,
+                    onClick = { onSelectYear(null) }
+                )
+                HorizontalDivider(thickness = 1.dp, color = CardBorder)
+                LazyColumn(
+                    state = listState,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .heightIn(max = 264.dp),
+                    contentPadding = PaddingValues(vertical = 4.dp)
+                ) {
+                    items(
+                        items = yearOptions,
+                        key = { it }
+                    ) { year ->
+                        YearFilterRowItem(
+                            label = year.toString(),
+                            isSelected = selectedYear == year,
+                            onClick = { onSelectYear(year) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YearFilterRowItem(
+    label: String,
+    isSelected: Boolean,
+    onClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .defaultMinSize(minHeight = 44.dp)
+            .clickable(onClick = onClick)
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            fontSize = 14.sp,
+            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
+            color = if (isSelected) PrimaryTeal else TextPrimary
+        )
+        if (isSelected) {
+            Icon(
+                imageVector = Icons.Default.Check,
+                contentDescription = null,
+                tint = PrimaryTeal,
+                modifier = Modifier.size(18.dp)
+            )
         }
     }
 }

@@ -9,6 +9,7 @@ import com.example.piggybank.model.GoalRequest
 import com.example.piggybank.model.SavingsGoal
 import com.example.piggybank.model.Transaction
 import com.example.piggybank.model.TransactionRequest
+import com.example.piggybank.util.nowIsoTimestampUtc
 import com.google.gson.Gson
 import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CancellationException
@@ -81,7 +82,8 @@ class SharedPreferencesKeyValueStorage(context: Context) : KeyValueStorage {
  */
 class OfflineSyncStore(
     private val storage: KeyValueStorage,
-    private val gson: Gson = Gson()
+    private val gson: Gson = Gson(),
+    private val nowProvider: () -> String = { nowIsoTimestampUtc() }
 ) {
     private val lock = Any()
     private val remappedTransactionIds = mutableMapOf<Long, Long>()
@@ -126,7 +128,8 @@ class OfflineSyncStore(
             type = request.type,
             category = request.category,
             date = request.date,
-            note = request.note
+            note = request.note,
+            createdAt = nowProvider()
         )
         val updatedCache = listOf(localTx) + getCachedTransactions()
         saveList(KEY_TRANSACTIONS_CACHE, updatedCache)
@@ -269,7 +272,8 @@ class OfflineSyncStore(
             targetAmount = request.targetAmount,
             currentAmount = request.currentAmount,
             deadline = request.deadline,
-            note = request.note
+            note = request.note,
+            createdAt = nowProvider()
         )
         val updatedCache = listOf(localGoal) + getCachedGoals()
         saveList(KEY_GOALS_CACHE, updatedCache)
@@ -431,7 +435,8 @@ class OfflineSyncStore(
                         type = req.type,
                         category = req.category,
                         date = req.date,
-                        note = req.note
+                        note = req.note,
+                        createdAt = nowProvider()
                     )
                     if (result.none { it.id == op.targetId }) {
                         result.add(0, localCopy)
@@ -476,7 +481,8 @@ class OfflineSyncStore(
                         targetAmount = req.targetAmount,
                         currentAmount = req.currentAmount,
                         deadline = req.deadline,
-                        note = req.note
+                        note = req.note,
+                        createdAt = nowProvider()
                     )
                     if (result.none { it.id == op.targetId }) {
                         result.add(0, localCopy)

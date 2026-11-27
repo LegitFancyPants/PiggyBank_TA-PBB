@@ -6,6 +6,7 @@ import com.example.piggybank.model.filterAndSortTransactions
 import com.example.piggybank.model.groupTransactionsForDisplay
 import com.example.piggybank.util.YearMonthSelection
 import com.example.piggybank.util.formatDateWithDay
+import com.example.piggybank.util.parseIsoTimestampMillis
 import com.example.piggybank.util.parseYearMonthSelection
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
@@ -109,5 +110,45 @@ class TransactionHelperTest {
             listOf("Okt Tx"),
             filterAndSortTransactions(txs, monthPrefix = "2026-10").map { it.title }
         )
+    }
+
+    @Test
+    fun offlineTransactionsAppearAtTopOfSameDateBeforeAndConsistentWithSync() {
+        val transactions = listOf(
+            Transaction(10L, "Synced Lama", 10_000L, "expense", "Makanan", "2026-11-27", createdAt = "2026-11-27T01:00:00.900000+00:00"),
+            Transaction(11L, "Synced Baru", 10_000L, "expense", "Makanan", "2026-11-27", createdAt = "2026-11-27T01:00:01.100000+00:00"),
+            // Simulate device clock lagging behind server clock for offline items
+            Transaction(-1L, "Offline Pertama", 10_000L, "expense", "Makanan", "2026-11-27", createdAt = "2026-11-27T00:30:00.000Z"),
+            Transaction(-2L, "Offline Kedua", 10_000L, "expense", "Makanan", "2026-11-27", createdAt = "2026-11-27T00:31:00.000Z")
+        )
+
+        val newest = filterAndSortTransactions(transactions, sortOption = TransactionSortOption.NEWEST)
+        assertEquals(
+            listOf("Offline Kedua", "Offline Pertama", "Synced Baru", "Synced Lama"),
+            newest.map { it.title }
+        )
+
+        val grouped = groupTransactionsForDisplay(newest, TransactionSortOption.NEWEST)
+        assertEquals(1, grouped.size)
+        assertEquals(
+            listOf("Offline Kedua", "Offline Pertama", "Synced Baru", "Synced Lama"),
+            grouped.first().transactions.map { it.title }
+        )
+
+        val oldest = filterAndSortTransactions(transactions, sortOption = TransactionSortOption.OLDEST)
+        assertEquals(
+            listOf("Synced Lama", "Synced Baru", "Offline Pertama", "Offline Kedua"),
+            oldest.map { it.title }
+        )
+
+        val amountDesc = filterAndSortTransactions(transactions, sortOption = TransactionSortOption.AMOUNT_DESC)
+        assertEquals(
+            listOf("Offline Kedua", "Offline Pertama", "Synced Baru", "Synced Lama"),
+            amountDesc.map { it.title }
+        )
+
+        val t1 = parseIsoTimestampMillis("2026-11-27T01:00:00.900000+00:00")!!
+        val t2 = parseIsoTimestampMillis("2026-11-27T01:00:01.100000+00:00")!!
+        assertTrue(t1 < t2)
     }
 }

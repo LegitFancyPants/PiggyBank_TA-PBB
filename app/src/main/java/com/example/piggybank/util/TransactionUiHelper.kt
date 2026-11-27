@@ -213,10 +213,26 @@ fun isIsoDatePast(isoDate: String, todayIso: String = todayIsoDate()): Boolean {
     return trimmed < todayIso
 }
 
+private val isoFractionalSecondsRegex = Regex("""(\.\d+)(?=(?:Z|[+-]\d{2}:?\d{2})?$)""")
+
+fun nowIsoTimestampUtc(nowMillis: Long = System.currentTimeMillis()): String {
+    val formatter = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US).apply {
+        timeZone = TimeZone.getTimeZone("UTC")
+    }
+    return formatter.format(Date(nowMillis))
+}
+
+private fun normalizeIsoFractionalSeconds(timestamp: String): String =
+    isoFractionalSecondsRegex.replace(timestamp) { match ->
+        val digits = match.value.substring(1)
+        val millisDigits = digits.take(3).padEnd(3, '0')
+        ".$millisDigits"
+    }
+
 fun parseIsoTimestampMillis(timestamp: String?): Long? {
     if (timestamp.isNullOrBlank()) return null
+    val normalized = normalizeIsoFractionalSeconds(timestamp.trim())
     val patterns = listOf(
-        "yyyy-MM-dd'T'HH:mm:ss.SSSSSSXXX",
         "yyyy-MM-dd'T'HH:mm:ss.SSSXXX",
         "yyyy-MM-dd'T'HH:mm:ssXXX",
         "yyyy-MM-dd'T'HH:mm:ss.SSS'Z'",
@@ -229,11 +245,56 @@ fun parseIsoTimestampMillis(timestamp: String?): Long? {
                 timeZone = TimeZone.getTimeZone("UTC")
                 isLenient = false
             }
-            val parsed = parser.parse(timestamp.trim())
+            val parsed = parser.parse(normalized)
             if (parsed != null) return parsed.time
         } catch (_: Exception) {
             // Try next format
         }
     }
     return null
+}
+
+/**
+ * Compares two items in ascending creation order (older < newer), aware of OfflineSyncStore
+ * negative temporary IDs:
+ * - Unsynced local items (id < 0) are newer than synced items (id >= 0), independent of clock skew.
+ * - Among unsynced local items, more-negative IDs (-2 vs -1) are newer, matching FIFO sync order.
+ * - Among synced items, parsed UTC createdAt timestamps take precedence, falling back to ID.
+ */
+fun compareSyncAwareCreationOrder(
+    aId: Long,
+    aCreatedAt: String?,
+    bId: Long,
+    bCreatedAt: String?
+): Int {
+    val aTime = if (aId < 0L) null else parseIsoTimestampMillis(aCreatedAt)
+    val bTime = if (bId < 0L) null else parseIsoTimestampMillis(bCreatedAt)
+
+    val aTier = when {
+        aId < 0L -> 3
+        aTime != null -> 2
+        !aCreatedAt.isNullOrBlank() -> 1
+        else -> 0
+    }
+    val bTier = when {
+        bId < 0L -> 3
+        bTime != null -> 2
+        !bCreatedAt.isNullOrBlank() -> 1
+        else -> 0
+    }
+
+    if (aTier != bTier) return aTier.compareTo(bTier)
+
+    return when (aTier) {
+        3 -> bId.compareTo(aId)
+        2 -> {
+            val timeCmp = aTime!!.compareTo(bTime!!)
+            if (timeCmp != 0) timeCmp else aId.compareTo(bId)
+        }
+        1 -> {
+            val rawCmp = aCreatedAt!!.trim().compareTo(bCreatedAt!!.trim())
+            if (rawCmp != 0) rawCmp else aId.compareTo(bId)
+        }
+        else -> aId.compareTo(bId)
+    }
 }

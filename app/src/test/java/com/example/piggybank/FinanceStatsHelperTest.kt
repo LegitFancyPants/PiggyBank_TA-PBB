@@ -3,6 +3,7 @@ package com.example.piggybank
 import com.example.piggybank.model.SavingsGoal
 import com.example.piggybank.model.Transaction
 import com.example.piggybank.util.YearMonthSelection
+import com.example.piggybank.util.buildStatisticYearOptions
 import com.example.piggybank.util.calculateAvailableYears
 import com.example.piggybank.util.calculateMonthExpense
 import com.example.piggybank.util.calculateMonthIncome
@@ -84,5 +85,11 @@ class FinanceStatsHelperTest {
         assertEquals(1, only2025.size)
         assertEquals(2025, only2025[0].year)
         assertEquals(1_000_000L, only2025[0].months[0].balance)
+
+        val yearOptions = buildStatisticYearOptions(transactions)
+        assertEquals(2100, yearOptions.first())
+        assertEquals(1900, yearOptions.last())
+        assertEquals(201, yearOptions.size)
+        assertTrue(yearOptions.containsAll(listOf(2026, 2025, 2024)))
     }
 }

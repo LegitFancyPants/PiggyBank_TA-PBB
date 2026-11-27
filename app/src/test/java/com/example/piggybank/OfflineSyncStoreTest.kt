@@ -5,10 +5,15 @@ import com.example.piggybank.data.KeyValueStorage
 import com.example.piggybank.data.OfflineSyncStore
 import com.example.piggybank.data.PendingOpType
 import com.example.piggybank.model.GoalRequest
+import com.example.piggybank.model.GoalSortOption
 import com.example.piggybank.model.SavingsGoal
 import com.example.piggybank.model.Transaction
 import com.example.piggybank.model.TransactionRequest
+import com.example.piggybank.model.TransactionSortOption
+import com.example.piggybank.model.filterAndSortGoals
+import com.example.piggybank.model.filterAndSortTransactions
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -135,5 +140,74 @@ class OfflineSyncStoreTest {
         val provider2 = DeviceIdProvider(storage) { "device-uuid-${++counter}" }
         assertEquals("device-uuid-1", provider2.getDeviceId())
         assertEquals(1, counter)
+    }
+
+    @Test
+    fun offlineCreatedTransactionsAndGoalsKeepIdenticalOrderBeforeAndAfterFifoSync() {
+        val store = OfflineSyncStore(InMemoryKeyValueStorage())
+
+        // Existing synced transactions on the same date
+        val syncedTx1 = Transaction(10L, "Sarapan", 15_000L, "expense", "Makanan", "2026-11-27", createdAt = "2026-11-27T01:00:00.000000+00:00")
+        val syncedTx2 = Transaction(11L, "Kopi", 20_000L, "expense", "Makanan", "2026-11-27", createdAt = "2026-11-27T02:00:00.000000+00:00")
+        store.saveRemoteTransactionsMerged(listOf(syncedTx2, syncedTx1))
+
+        // Add two offline transactions on the same date
+        store.enqueueCreateTransaction(TransactionRequest("Makan Siang", 25_000L, "expense", "Makanan", "2026-11-27"))
+        val cachedBeforeSync = store.enqueueCreateTransaction(TransactionRequest("Jajan Sore", 12_000L, "expense", "Makanan", "2026-11-27"))
+
+        assertTrue(cachedBeforeSync.filter { it.id < 0L }.all { !it.createdAt.isNullOrBlank() })
+
+        val expectedOrder = listOf("Jajan Sore", "Makan Siang", "Kopi", "Sarapan")
+        assertEquals(
+            expectedOrder,
+            filterAndSortTransactions(cachedBeforeSync, sortOption = TransactionSortOption.NEWEST).map { it.title }
+        )
+
+        // Flush FIFO pending ops -> server assigns positive increasing IDs & timestamps
+        val txOps = store.getPendingTransactionOps()
+        assertEquals(2, txOps.size)
+        store.markTransactionCreateSynced(
+            txOps[0].opId,
+            txOps[0].targetId,
+            Transaction(12L, "Makan Siang", 25_000L, "expense", "Makanan", "2026-11-27", createdAt = "2026-11-27T05:00:00.000000+00:00")
+        )
+        val cachedAfterSync = store.markTransactionCreateSynced(
+            txOps[1].opId,
+            txOps[1].targetId,
+            Transaction(13L, "Jajan Sore", 12_000L, "expense", "Makanan", "2026-11-27", createdAt = "2026-11-27T05:00:01.000000+00:00")
+        )
+        assertEquals(
+            expectedOrder,
+            filterAndSortTransactions(cachedAfterSync, sortOption = TransactionSortOption.NEWEST).map { it.title }
+        )
+
+        // Same verification for SavingsGoal
+        val syncedGoal = SavingsGoal(20L, "Dana Darurat", 3_000_000L, 500_000L, createdAt = "2026-11-27T01:00:00.000000+00:00")
+        store.saveRemoteGoalsMerged(listOf(syncedGoal))
+        store.enqueueCreateGoal(GoalRequest("Goal Offline 1", 1_000_000L, 0L, "", ""))
+        val goalsBeforeSync = store.enqueueCreateGoal(GoalRequest("Goal Offline 2", 2_000_000L, 0L, "", ""))
+
+        assertFalse(goalsBeforeSync.first { it.name == "Goal Offline 2" }.createdAt.isNullOrBlank())
+        val expectedGoalOrder = listOf("Goal Offline 2", "Goal Offline 1", "Dana Darurat")
+        assertEquals(
+            expectedGoalOrder,
+            filterAndSortGoals(goalsBeforeSync, sortOption = GoalSortOption.NEWEST).map { it.name }
+        )
+
+        val goalOps = store.getPendingGoalOps()
+        store.markGoalCreateSynced(
+            goalOps[0].opId,
+            goalOps[0].targetId,
+            SavingsGoal(21L, "Goal Offline 1", 1_000_000L, 0L, createdAt = "2026-11-27T05:00:00.000000+00:00")
+        )
+        val goalsAfterSync = store.markGoalCreateSynced(
+            goalOps[1].opId,
+            goalOps[1].targetId,
+            SavingsGoal(22L, "Goal Offline 2", 2_000_000L, 0L, createdAt = "2026-11-27T05:00:01.000000+00:00")
+        )
+        assertEquals(
+            expectedGoalOrder,
+            filterAndSortGoals(goalsAfterSync, sortOption = GoalSortOption.NEWEST).map { it.name }
+        )
     }
 }

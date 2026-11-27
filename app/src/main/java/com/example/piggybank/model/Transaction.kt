@@ -1,5 +1,6 @@
 package com.example.piggybank.model
 
+import com.example.piggybank.util.compareSyncAwareCreationOrder
 import com.google.gson.annotations.SerializedName
 
 data class Transaction(
@@ -58,29 +59,32 @@ fun filterAndSortTransactions(
     return when (sortOption) {
         TransactionSortOption.NEWEST -> filtered.sortedWith(
             compareByDescending<Transaction> { it.date.trim() }
-                .thenByDescending { it.id }
+                .thenComparator { a, b -> compareTransactionCreationOrder(b, a) }
         )
         TransactionSortOption.OLDEST -> filtered.sortedWith(
             compareBy<Transaction> { it.date.trim() }
-                .thenBy { it.id }
+                .thenComparator { a, b -> compareTransactionCreationOrder(a, b) }
         )
         TransactionSortOption.ALPHABETICAL -> filtered.sortedWith(
             compareBy<Transaction> { it.title.trim().lowercase() }
                 .thenByDescending { it.date.trim() }
-                .thenByDescending { it.id }
+                .thenComparator { a, b -> compareTransactionCreationOrder(b, a) }
         )
         TransactionSortOption.AMOUNT_DESC -> filtered.sortedWith(
             compareByDescending<Transaction> { it.amount }
                 .thenByDescending { it.date.trim() }
-                .thenByDescending { it.id }
+                .thenComparator { a, b -> compareTransactionCreationOrder(b, a) }
         )
         TransactionSortOption.AMOUNT_ASC -> filtered.sortedWith(
             compareBy<Transaction> { it.amount }
                 .thenByDescending { it.date.trim() }
-                .thenByDescending { it.id }
+                .thenComparator { a, b -> compareTransactionCreationOrder(b, a) }
         )
     }
 }
+
+private fun compareTransactionCreationOrder(a: Transaction, b: Transaction): Int =
+    compareSyncAwareCreationOrder(a.id, a.createdAt, b.id, b.createdAt)
 
 fun groupTransactionsForDisplay(
     sortedTransactions: List<Transaction>,

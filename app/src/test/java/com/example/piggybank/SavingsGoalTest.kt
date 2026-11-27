@@ -157,4 +157,27 @@ class SavingsGoalTest {
             filterAndSortGoals(goals, sortOption = GoalSortOption.TARGET_ASC).map { it.name }
         )
     }
+
+    @Test
+    fun offlineGoalsAppearAtTopInNewestAndAfterSyncedInOldestAndDeadlineOrder() {
+        val goals = listOf(
+            SavingsGoal(id = 10L, name = "Synced Lama", targetAmount = 1_000_000L, currentAmount = 0L, deadline = "2027-06-01", createdAt = "2026-11-27T01:00:00.000000+00:00"),
+            SavingsGoal(id = 11L, name = "Synced Baru", targetAmount = 1_000_000L, currentAmount = 0L, deadline = "2027-06-01", createdAt = "2026-11-27T01:05:00.000000+00:00"),
+            SavingsGoal(id = -1L, name = "Offline Pertama", targetAmount = 1_000_000L, currentAmount = 0L, deadline = "2027-06-01", createdAt = "2026-11-27T00:30:00.000Z"),
+            SavingsGoal(id = -2L, name = "Offline Kedua", targetAmount = 1_000_000L, currentAmount = 0L, deadline = "2027-06-01", createdAt = "2026-11-27T00:31:00.000Z")
+        )
+
+        assertEquals(
+            listOf("Offline Kedua", "Offline Pertama", "Synced Baru", "Synced Lama"),
+            filterAndSortGoals(goals, sortOption = GoalSortOption.NEWEST).map { it.name }
+        )
+        assertEquals(
+            listOf("Synced Lama", "Synced Baru", "Offline Pertama", "Offline Kedua"),
+            filterAndSortGoals(goals, sortOption = GoalSortOption.OLDEST).map { it.name }
+        )
+        assertEquals(
+            listOf("Synced Lama", "Synced Baru", "Offline Pertama", "Offline Kedua"),
+            goals.sortedByDeadlineAndCreation().map { it.name }
+        )
+    }
 }
