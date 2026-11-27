@@ -66,6 +66,7 @@ import androidx.navigation.navArgument
 import com.example.piggybank.network.ApiClient
 import com.example.piggybank.ui.screens.AboutDetailScreen
 import com.example.piggybank.ui.screens.ChartsScreen
+import com.example.piggybank.ui.screens.ExportExcelScreen
 import com.example.piggybank.ui.screens.GoalDetailScreen
 import com.example.piggybank.ui.screens.GoalFormScreen
 import com.example.piggybank.ui.screens.GoalListScreen
@@ -313,6 +314,9 @@ fun PiggyBankApp() {
                     onReportClick = {
                         navController.navigate(Screen.Report.route)
                     },
+                    onExportExcelClick = {
+                        navController.navigate(Screen.ExportExcel.route)
+                    },
                     onAboutDetailClick = {
                         navController.navigate(Screen.AboutDetail.route)
                     }
@@ -349,7 +353,16 @@ fun PiggyBankApp() {
                 )
             }
 
-            // Layar 11: Sub-halaman Tentang Aplikasi
+            // Layar 11: Sub-halaman Export Excel
+            composable(Screen.ExportExcel.route) {
+                ExportExcelScreen(
+                    transactionViewModel = transactionViewModel,
+                    goalViewModel = goalViewModel,
+                    onBackClick = { navController.popBackStack() }
+                )
+            }
+
+            // Layar 12: Sub-halaman Tentang Aplikasi
             composable(Screen.AboutDetail.route) {
                 AboutDetailScreen(
                     onBackClick = { navController.popBackStack() }

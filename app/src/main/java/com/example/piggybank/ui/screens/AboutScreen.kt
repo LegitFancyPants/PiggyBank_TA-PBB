@@ -26,6 +26,7 @@ import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Savings
+import androidx.compose.material.icons.filled.TableChart
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -86,6 +87,7 @@ fun ProfileScreen(
     transactionViewModel: TransactionViewModel,
     goalViewModel: GoalViewModel,
     onReportClick: () -> Unit,
+    onExportExcelClick: () -> Unit,
     onAboutDetailClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -109,6 +111,7 @@ fun ProfileScreen(
             displayName = preferences.getDisplayName()
         },
         onReportClick = onReportClick,
+        onExportExcelClick = onExportExcelClick,
         onAboutDetailClick = onAboutDetailClick,
         modifier = modifier
     )
@@ -120,6 +123,7 @@ fun ProfileContent(
     totalAssets: Long,
     onSaveDisplayName: (String) -> Unit,
     onReportClick: () -> Unit,
+    onExportExcelClick: () -> Unit,
     onAboutDetailClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -208,6 +212,15 @@ fun ProfileContent(
                     icon = Icons.AutoMirrored.Filled.ReceiptLong,
                     title = "Laporan",
                     onClick = onReportClick
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = CardBorder
+                )
+                ProfileMenuRow(
+                    icon = Icons.Default.TableChart,
+                    title = "Export Excel",
+                    onClick = onExportExcelClick
                 )
                 HorizontalDivider(
                     modifier = Modifier.padding(horizontal = 16.dp),
@@ -411,7 +424,7 @@ fun AboutDetailScreen(
                     Spacer(modifier = Modifier.height(12.dp))
 
                     Text(
-                        text = "Aplikasi tracking arus kas harian dan manajemen target tabungan pribadi berbasis Android Native (Jetpack Compose) dan RESTful API.",
+                        text = "Aplikasi tracking arus kas harian dan manajemen target tabungan pribadi.",
                         fontSize = 13.sp,
                         color = Color(0xFF475569),
                         lineHeight = 20.sp
@@ -446,26 +459,6 @@ fun AboutDetailScreen(
                             label = "Kelompok",
                             value = DEVELOPER_GROUP
                         )
-                        Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.SpaceBetween,
-                            verticalAlignment = Alignment.Top
-                        ) {
-                            Text(
-                                text = "Tech Stack",
-                                fontSize = 13.sp,
-                                color = TextSecondary
-                            )
-                            Text(
-                                text = "Kotlin, Jetpack Compose, Express.js, Supabase",
-                                fontSize = 12.sp,
-                                color = TextSecondary,
-                                textAlign = TextAlign.End,
-                                modifier = Modifier
-                                    .weight(1f, fill = false)
-                                    .padding(start = 16.dp)
-                            )
-                        }
                     }
                 }
             }
@@ -510,6 +503,7 @@ private fun ProfileScreenPreview() {
             totalAssets = 3_450_000L,
             onSaveDisplayName = {},
             onReportClick = {},
+            onExportExcelClick = {},
             onAboutDetailClick = {}
         )
     }

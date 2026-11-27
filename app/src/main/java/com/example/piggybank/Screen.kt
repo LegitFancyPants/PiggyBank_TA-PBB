@@ -33,5 +33,7 @@ sealed class Screen(val route: String) {
 
     data object MonthlyBudget : Screen("monthly_budget")
 
+    data object ExportExcel : Screen("export_excel")
+
     data object AboutDetail : Screen("about_detail")
 }
