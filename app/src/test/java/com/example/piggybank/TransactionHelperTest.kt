@@ -4,8 +4,11 @@ import com.example.piggybank.model.Transaction
 import com.example.piggybank.model.TransactionSortOption
 import com.example.piggybank.model.filterAndSortTransactions
 import com.example.piggybank.model.groupTransactionsForDisplay
+import com.example.piggybank.util.YearMonthSelection
 import com.example.piggybank.util.formatDateWithDay
+import com.example.piggybank.util.parseYearMonthSelection
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
@@ -79,5 +82,32 @@ class TransactionHelperTest {
 
         val amountAsc = filterAndSortTransactions(transactions, sortOption = TransactionSortOption.AMOUNT_ASC)
         assertEquals(listOf("Apel", "Bakso", "Kopi Susu", "Uang Saku"), amountAsc.map { it.title })
+    }
+
+    @Test
+    fun yearMonthSelectionStepsAcrossYearsAndFiltersByMonthPrefix() {
+        val jan = YearMonthSelection(2026, 1)
+        assertEquals(YearMonthSelection(2025, 12), jan.previousMonth())
+        assertEquals("Des 2025", jan.previousMonth().formatLabel())
+
+        val dec = YearMonthSelection(2026, 12)
+        assertEquals(YearMonthSelection(2027, 1), dec.nextMonth())
+        assertEquals("Jan 2027", dec.nextMonth().formatLabel())
+
+        assertEquals(YearMonthSelection(2026, 11), parseYearMonthSelection("2026-11-26"))
+        assertNull(parseYearMonthSelection("2026-13-01"))
+
+        val txs = listOf(
+            Transaction(1L, "Nov Tx", 20_000L, "expense", "Makanan", "2026-11-20"),
+            Transaction(2L, "Okt Tx", 30_000L, "expense", "Makanan", "2026-10-15")
+        )
+        assertEquals(
+            listOf("Nov Tx"),
+            filterAndSortTransactions(txs, monthPrefix = "2026-11").map { it.title }
+        )
+        assertEquals(
+            listOf("Okt Tx"),
+            filterAndSortTransactions(txs, monthPrefix = "2026-10").map { it.title }
+        )
     }
 }

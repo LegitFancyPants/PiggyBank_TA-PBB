@@ -17,10 +17,51 @@ import java.util.Date
 import java.util.Locale
 import java.util.TimeZone
 
-private val indonesianMonths = listOf(
+val indonesianMonths = listOf(
     "Jan", "Feb", "Mar", "Apr", "Mei", "Jun",
     "Jul", "Agu", "Sep", "Okt", "Nov", "Des"
 )
+
+val fullIndonesianMonths = listOf(
+    "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+    "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+)
+
+data class YearMonthSelection(
+    val year: Int,
+    val month: Int
+) : Comparable<YearMonthSelection> {
+    fun toYearMonthPrefix(): String = String.format(Locale.US, "%04d-%02d", year, month)
+
+    fun formatLabel(): String = "${indonesianMonths[(month - 1).coerceIn(0, 11)]} $year"
+
+    fun previousMonth(): YearMonthSelection =
+        if (month <= 1) YearMonthSelection(year - 1, 12) else YearMonthSelection(year, month - 1)
+
+    fun nextMonth(): YearMonthSelection =
+        if (month >= 12) YearMonthSelection(year + 1, 1) else YearMonthSelection(year, month + 1)
+
+    override fun compareTo(other: YearMonthSelection): Int =
+        if (year != other.year) year.compareTo(other.year) else month.compareTo(other.month)
+}
+
+fun currentYearMonthSelection(): YearMonthSelection {
+    val calendar = Calendar.getInstance()
+    return YearMonthSelection(
+        year = calendar.get(Calendar.YEAR),
+        month = calendar.get(Calendar.MONTH) + 1
+    )
+}
+
+fun parseYearMonthSelection(isoDate: String): YearMonthSelection? {
+    val trimmed = isoDate.trim()
+    if (!isValidCalendarDate(trimmed)) return null
+    val parts = trimmed.split("-")
+    val year = parts[0].toIntOrNull() ?: return null
+    val month = parts[1].toIntOrNull() ?: return null
+    if (month !in 1..12) return null
+    return YearMonthSelection(year = year, month = month)
+}
 
 private val indonesianDays = listOf(
     "Minggu", "Senin", "Selasa", "Rabu", "Kamis", "Jumat", "Sabtu"

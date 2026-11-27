@@ -83,14 +83,15 @@ fun TransactionDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val resolvedId = viewModel.resolveTransactionId(transactionId)
 
     LaunchedEffect(transactionId) {
         viewModel.clearActionError()
         viewModel.fetchTransactionDetail(transactionId)
     }
 
-    val transaction = uiState.selectedTransaction?.takeIf { it.id == transactionId }
-        ?: uiState.allTransactions.find { it.id == transactionId }
+    val transaction = uiState.selectedTransaction?.takeIf { it.id == resolvedId }
+        ?: uiState.allTransactions.find { it.id == resolvedId }
 
     TransactionDetailContent(
         transaction = transaction,

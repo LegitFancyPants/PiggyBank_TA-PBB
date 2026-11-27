@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -17,11 +18,11 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.Sort
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.CloudOff
@@ -34,7 +35,6 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
@@ -64,6 +64,8 @@ import com.example.piggybank.model.GoalSortOption
 import com.example.piggybank.model.GoalStatusFilter
 import com.example.piggybank.model.SavingsGoal
 import com.example.piggybank.model.sampleSavingsGoals
+import com.example.piggybank.ui.components.BorderlessEmptyState
+import com.example.piggybank.ui.components.rememberRemainingLazyListHeight
 import com.example.piggybank.ui.theme.BackgroundCanvas
 import com.example.piggybank.ui.theme.CardBorder
 import com.example.piggybank.ui.theme.CardSurface
@@ -86,7 +88,6 @@ import com.example.piggybank.viewmodel.GoalViewModel
 fun GoalListScreen(
     viewModel: GoalViewModel,
     onGoalClick: (Long) -> Unit,
-    onAddGoalClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -97,7 +98,6 @@ fun GoalListScreen(
         onSearchQueryChange = viewModel::setSearchQuery,
         onSortOptionSelected = viewModel::setSortOption,
         onGoalClick = onGoalClick,
-        onAddGoalClick = onAddGoalClick,
         onRefresh = viewModel::fetchGoals,
         modifier = modifier
     )
@@ -110,18 +110,31 @@ fun GoalListContent(
     onSearchQueryChange: (String) -> Unit,
     onSortOptionSelected: (GoalSortOption) -> Unit,
     onGoalClick: (Long) -> Unit,
-    onAddGoalClick: () -> Unit,
     onRefresh: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+    val listState = rememberLazyListState()
+    val emptyAnchorIndex = 2
+    val emptyAreaHeight = rememberRemainingLazyListHeight(
+        listState = listState,
+        anchorItemIndex = emptyAnchorIndex,
+        itemSpacing = 12.dp
+    )
+
     Box(
         modifier = modifier
             .fillMaxSize()
             .background(BackgroundCanvas)
     ) {
         LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
-            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
+            contentPadding = PaddingValues(
+                start = 16.dp,
+                end = 16.dp,
+                top = 16.dp,
+                bottom = if (uiState.displayedGoals.isEmpty()) 0.dp else 28.dp
+            ),
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             item {
@@ -157,16 +170,6 @@ fun GoalListContent(
                 )
             }
 
-            if (uiState.isUsingMockData) {
-                item {
-                    GoalMockDataBanner(
-                        message = uiState.errorMessage
-                            ?: "Mode lokal aktif. Tekan Coba Lagi untuk sinkronisasi server.",
-                        onRefresh = onRefresh
-                    )
-                }
-            }
-
             if (uiState.isLoading) {
                 item {
                     Box(
@@ -180,12 +183,19 @@ fun GoalListContent(
                 }
             } else if (uiState.displayedGoals.isEmpty()) {
                 item {
-                    EmptyGoalsCard(
-                        hasAnyGoals = uiState.goals.isNotEmpty(),
-                        searchQuery = uiState.searchQuery,
-                        selectedStatusFilter = uiState.selectedStatusFilter,
-                        onClearSearch = { onSearchQueryChange("") }
-                    )
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .defaultMinSize(minHeight = emptyAreaHeight),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        EmptyGoalsState(
+                            hasAnyGoals = uiState.goals.isNotEmpty(),
+                            searchQuery = uiState.searchQuery,
+                            selectedStatusFilter = uiState.selectedStatusFilter,
+                            onClearSearch = { onSearchQueryChange("") }
+                        )
+                    }
                 }
             } else {
                 items(
@@ -198,21 +208,6 @@ fun GoalListContent(
                     )
                 }
             }
-        }
-
-        FloatingActionButton(
-            onClick = onAddGoalClick,
-            shape = RoundedCornerShape(16.dp),
-            containerColor = PrimaryTeal,
-            contentColor = Color.White,
-            modifier = Modifier
-                .align(Alignment.BottomEnd)
-                .padding(16.dp)
-        ) {
-            Icon(
-                imageVector = Icons.Default.Add,
-                contentDescription = "Tambah Target"
-            )
         }
     }
 }
@@ -378,55 +373,6 @@ private fun GoalSearchAndSortBar(
 }
 
 @Composable
-private fun GoalMockDataBanner(
-    message: String,
-    onRefresh: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(12.dp),
-        colors = CardDefaults.cardColors(containerColor = MintSurfaceTint),
-        border = BorderStroke(1.dp, SoftMint)
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 12.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Icon(
-                imageVector = Icons.Default.CloudOff,
-                contentDescription = null,
-                tint = PrimaryTeal,
-                modifier = Modifier.size(18.dp)
-            )
-            Spacer(modifier = Modifier.width(8.dp))
-            Text(
-                text = message,
-                fontSize = 12.sp,
-                color = DarkTeal,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(onClick = onRefresh) {
-                Icon(
-                    imageVector = Icons.Default.Refresh,
-                    contentDescription = "Coba Lagi",
-                    tint = PrimaryTeal,
-                    modifier = Modifier.size(16.dp)
-                )
-                Spacer(modifier = Modifier.width(4.dp))
-                Text(
-                    text = "Coba Lagi",
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = PrimaryTeal
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun SavingsGoalItemCard(
     goal: SavingsGoal,
     onClick: () -> Unit
@@ -556,67 +502,27 @@ private fun SavingsGoalItemCard(
 }
 
 @Composable
-private fun EmptyGoalsCard(
+private fun EmptyGoalsState(
     hasAnyGoals: Boolean,
     searchQuery: String,
     selectedStatusFilter: GoalStatusFilter,
     onClearSearch: () -> Unit
 ) {
     val trimmedQuery = searchQuery.trim()
+    val isSearching = hasAnyGoals && trimmedQuery.isNotEmpty()
     val emptyMessage = when {
         !hasAnyGoals -> "Belum ada target celengan. Tekan tombol + untuk memulai!"
         trimmedQuery.isNotEmpty() -> "Target celengan \"$trimmedQuery\" tidak ditemukan."
         else -> "Belum ada target celengan pada kategori \"${selectedStatusFilter.label}\"."
     }
 
-    Card(
-        modifier = Modifier.fillMaxWidth(),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurface),
-        border = BorderStroke(1.dp, CardBorder),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 24.dp, vertical = 32.dp),
-            horizontalAlignment = Alignment.CenterHorizontally
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(48.dp)
-                    .clip(CircleShape)
-                    .background(MintSurfaceTint),
-                contentAlignment = Alignment.Center
-            ) {
-                Icon(
-                    imageVector = if (trimmedQuery.isNotEmpty()) Icons.Default.Search else Icons.Default.Savings,
-                    contentDescription = null,
-                    tint = PrimaryTeal,
-                    modifier = Modifier.size(24.dp)
-                )
-            }
-            Spacer(modifier = Modifier.height(12.dp))
-            Text(
-                text = emptyMessage,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium,
-                color = TextSecondary,
-                textAlign = TextAlign.Center
-            )
-            if (hasAnyGoals && trimmedQuery.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(8.dp))
-                TextButton(onClick = onClearSearch) {
-                    Text(
-                        text = "Hapus Pencarian",
-                        fontSize = 13.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = PrimaryTeal
-                    )
-                }
-            }
-        }
-    }
+    BorderlessEmptyState(
+        icon = if (trimmedQuery.isNotEmpty()) Icons.Default.Search else Icons.Default.Savings,
+        message = emptyMessage,
+        actionLabel = if (isSearching) "Hapus Pencarian" else null,
+        onActionClick = if (isSearching) onClearSearch else null,
+        messageColor = if (isSearching) TextPrimary else TextSecondary
+    )
 }
 
 @Preview(showBackground = true, showSystemUi = true)
@@ -636,7 +542,6 @@ private fun GoalListScreenPreview() {
             onSearchQueryChange = {},
             onSortOptionSelected = {},
             onGoalClick = {},
-            onAddGoalClick = {},
             onRefresh = {}
         )
     }

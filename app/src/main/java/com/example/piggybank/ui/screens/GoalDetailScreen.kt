@@ -87,13 +87,14 @@ fun GoalDetailScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
+    val resolvedId = viewModel.resolveGoalId(goalId)
 
     LaunchedEffect(goalId) {
         viewModel.fetchGoalDetail(goalId)
     }
 
-    val goal = uiState.selectedGoal?.takeIf { it.id == goalId }
-        ?: uiState.goals.find { it.id == goalId }
+    val goal = uiState.selectedGoal?.takeIf { it.id == resolvedId }
+        ?: uiState.goals.find { it.id == resolvedId }
 
     GoalDetailContent(
         goal = goal,

@@ -77,7 +77,8 @@ fun GoalFormScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val editId = goalId?.takeIf { it > 0L }
+    val resolvedId = goalId?.let { viewModel.resolveGoalId(it) }
+    val editId = resolvedId?.takeIf { it != 0L }
     val isEditMode = editId != null
 
     LaunchedEffect(editId) {
@@ -98,7 +99,7 @@ fun GoalFormScreen(
         isEditMode = isEditMode,
         existingGoal = existingGoal,
         isSubmitting = uiState.isSubmitting,
-        actionErrorMessage = uiState.errorMessage.takeIf { !uiState.isUsingMockData },
+        actionErrorMessage = uiState.errorMessage,
         onBackClick = onBackClick,
         onSubmit = { request ->
             if (editId != null) {

@@ -42,15 +42,17 @@ fun filterAndSortTransactions(
     transactions: List<Transaction>,
     typeFilter: String? = null,
     searchQuery: String = "",
-    sortOption: TransactionSortOption = TransactionSortOption.NEWEST
+    sortOption: TransactionSortOption = TransactionSortOption.NEWEST,
+    monthPrefix: String? = null
 ): List<Transaction> {
     val keyword = searchQuery.trim()
     val filtered = transactions.filter { tx ->
+        val matchesMonth = monthPrefix == null || tx.date.trim().startsWith(monthPrefix)
         val matchesType = typeFilter == null || tx.type.equals(typeFilter, ignoreCase = true)
         val matchesQuery = keyword.isEmpty() ||
             tx.title.contains(keyword, ignoreCase = true) ||
             tx.category.contains(keyword, ignoreCase = true)
-        matchesType && matchesQuery
+        matchesMonth && matchesType && matchesQuery
     }
 
     return when (sortOption) {

@@ -3,6 +3,8 @@ package com.example.piggybank
 sealed class Screen(val route: String) {
     data object Transactions : Screen("transactions")
 
+    data object Charts : Screen("charts")
+
     data object TransactionDetail : Screen("transaction_detail/{id}") {
         fun createRoute(id: Long): String = "transaction_detail/$id"
     }
@@ -24,6 +26,12 @@ sealed class Screen(val route: String) {
     }
 
     data object About : Screen("about")
+
+    data object Report : Screen("report")
+
+    data object MonthlyStatistics : Screen("monthly_statistics")
+
+    data object MonthlyBudget : Screen("monthly_budget")
 
     data object AboutDetail : Screen("about_detail")
 }

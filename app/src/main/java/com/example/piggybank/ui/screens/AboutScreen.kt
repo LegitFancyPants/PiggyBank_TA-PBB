@@ -18,12 +18,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
-import androidx.compose.material.icons.filled.AccountBalanceWallet
+import androidx.compose.material.icons.automirrored.filled.ReceiptLong
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Savings
@@ -36,7 +35,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Scaffold
@@ -58,7 +56,6 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.tooling.preview.Preview
@@ -67,18 +64,12 @@ import androidx.compose.ui.unit.sp
 import com.example.piggybank.ui.theme.BackgroundCanvas
 import com.example.piggybank.ui.theme.CardBorder
 import com.example.piggybank.ui.theme.CardSurface
-import com.example.piggybank.ui.theme.ExpenseRed
-import com.example.piggybank.ui.theme.IncomeGreen
 import com.example.piggybank.ui.theme.PiggyBankTheme
 import com.example.piggybank.ui.theme.PrimaryTeal
 import com.example.piggybank.ui.theme.TextPrimary
 import com.example.piggybank.ui.theme.TextSecondary
-import com.example.piggybank.util.MonthlyBudgetUsage
 import com.example.piggybank.util.ProfilePreferences
-import com.example.piggybank.util.ThousandSeparatorVisualTransformation
-import com.example.piggybank.util.calculateMonthlyBudgetUsage
 import com.example.piggybank.util.calculateTotalAssets
-import com.example.piggybank.util.sanitizeNominalInput
 import com.example.piggybank.util.toRupiah
 import com.example.piggybank.viewmodel.GoalViewModel
 import com.example.piggybank.viewmodel.TransactionViewModel
@@ -94,6 +85,7 @@ private const val DEVELOPER_GROUP = "Kelompok 09 - Praktikum PPB 2026"
 fun ProfileScreen(
     transactionViewModel: TransactionViewModel,
     goalViewModel: GoalViewModel,
+    onReportClick: () -> Unit,
     onAboutDetailClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -104,30 +96,19 @@ fun ProfileScreen(
     val goalState by goalViewModel.uiState.collectAsState()
 
     var displayName by remember { mutableStateOf(preferences.getDisplayName()) }
-    var monthlyBudgetLimit by remember { mutableStateOf(preferences.getMonthlyBudgetLimit()) }
 
     val totalAssets = remember(txState.allTransactions, goalState.goals) {
         calculateTotalAssets(txState.allTransactions, goalState.goals)
-    }
-    val budgetUsage = remember(txState.totalExpense, monthlyBudgetLimit) {
-        calculateMonthlyBudgetUsage(
-            usedExpense = txState.totalExpense,
-            budgetLimit = monthlyBudgetLimit
-        )
     }
 
     ProfileContent(
         displayName = displayName,
         totalAssets = totalAssets,
-        budgetUsage = budgetUsage,
         onSaveDisplayName = { newName ->
             preferences.setDisplayName(newName)
             displayName = preferences.getDisplayName()
         },
-        onSaveMonthlyBudget = { newLimit ->
-            preferences.setMonthlyBudgetLimit(newLimit)
-            monthlyBudgetLimit = preferences.getMonthlyBudgetLimit()
-        },
+        onReportClick = onReportClick,
         onAboutDetailClick = onAboutDetailClick,
         modifier = modifier
     )
@@ -137,15 +118,12 @@ fun ProfileScreen(
 fun ProfileContent(
     displayName: String,
     totalAssets: Long,
-    budgetUsage: MonthlyBudgetUsage,
     onSaveDisplayName: (String) -> Unit,
-    onSaveMonthlyBudget: (Long) -> Unit,
+    onReportClick: () -> Unit,
     onAboutDetailClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var showNameDialog by remember { mutableStateOf(false) }
-    var showBudgetDialog by remember { mutableStateOf(false) }
-
     val avatarInitial = displayName.trim().firstOrNull()?.uppercaseChar()?.toString() ?: "P"
 
     Column(
@@ -217,13 +195,7 @@ fun ProfileContent(
             }
         }
 
-        // Kartu Sorotan: Anggaran Bulanan (dinamis menyesuaikan pengeluaran di Kas)
-        MonthlyBudgetHighlightCard(
-            budgetUsage = budgetUsage,
-            onClick = { showBudgetDialog = true }
-        )
-
-        // Kartu Menu Profil
+        // Kartu Grup Menu Profil
         Card(
             modifier = Modifier.fillMaxWidth(),
             shape = RoundedCornerShape(16.dp),
@@ -232,6 +204,15 @@ fun ProfileContent(
             elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
         ) {
             Column(modifier = Modifier.fillMaxWidth()) {
+                ProfileMenuRow(
+                    icon = Icons.AutoMirrored.Filled.ReceiptLong,
+                    title = "Laporan",
+                    onClick = onReportClick
+                )
+                HorizontalDivider(
+                    modifier = Modifier.padding(horizontal = 16.dp),
+                    color = CardBorder
+                )
                 ProfileMenuRow(
                     icon = Icons.Default.Info,
                     title = "Tentang Aplikasi",
@@ -250,151 +231,6 @@ fun ProfileContent(
                 showNameDialog = false
             }
         )
-    }
-
-    if (showBudgetDialog) {
-        EditMonthlyBudgetDialog(
-            initialLimit = budgetUsage.budgetLimit,
-            onDismiss = { showBudgetDialog = false },
-            onConfirm = { newLimit ->
-                onSaveMonthlyBudget(newLimit)
-                showBudgetDialog = false
-            }
-        )
-    }
-}
-
-@Composable
-private fun MonthlyBudgetHighlightCard(
-    budgetUsage: MonthlyBudgetUsage,
-    onClick: () -> Unit
-) {
-    val hasLimit = budgetUsage.budgetLimit > 0L
-    val isOverBudget = budgetUsage.isOverBudget
-    val accentColor = if (isOverBudget) ExpenseRed else PrimaryTeal
-
-    Card(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick),
-        shape = RoundedCornerShape(16.dp),
-        colors = CardDefaults.cardColors(containerColor = CardSurface),
-        border = BorderStroke(
-            width = 1.dp,
-            color = if (isOverBudget) ExpenseRed.copy(alpha = 0.45f) else CardBorder
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 1.dp)
-    ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp)
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Icon(
-                    imageVector = Icons.Default.AccountBalanceWallet,
-                    contentDescription = null,
-                    tint = accentColor,
-                    modifier = Modifier.size(22.dp)
-                )
-                Spacer(modifier = Modifier.width(12.dp))
-                Column(modifier = Modifier.weight(1f)) {
-                    Text(
-                        text = "Anggaran Bulanan",
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = TextPrimary
-                    )
-                    if (!hasLimit) {
-                        Spacer(modifier = Modifier.height(2.dp))
-                        Text(
-                            text = if (budgetUsage.usedExpense > 0L) {
-                                "Pengeluaran tercatat ${budgetUsage.usedExpense.toRupiah()} • Ketuk untuk atur batas"
-                            } else {
-                                "Atur batas pengeluaran bulan ini"
-                            },
-                            fontSize = 12.sp,
-                            color = TextSecondary,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                    }
-                }
-                if (hasLimit) {
-                    Text(
-                        text = if (isOverBudget) {
-                            "${budgetUsage.usagePercentage}% • Melebihi batas"
-                        } else {
-                            "${budgetUsage.usagePercentage}%"
-                        },
-                        style = TextStyle(
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold,
-                            color = accentColor,
-                            fontFeatureSettings = "tnum"
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(4.dp))
-                }
-                Icon(
-                    imageVector = Icons.AutoMirrored.Filled.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = TextSecondary,
-                    modifier = Modifier.size(20.dp)
-                )
-            }
-
-            if (hasLimit) {
-                Spacer(modifier = Modifier.height(12.dp))
-                LinearProgressIndicator(
-                    progress = { budgetUsage.usageFraction },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(8.dp)
-                        .clip(CircleShape),
-                    color = accentColor,
-                    trackColor = CardBorder,
-                    drawStopIndicator = {}
-                )
-                Spacer(modifier = Modifier.height(8.dp))
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Text(
-                        text = "${budgetUsage.usedExpense.toRupiah()} / ${budgetUsage.budgetLimit.toRupiah()}",
-                        style = TextStyle(
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium,
-                            color = TextSecondary,
-                            fontFeatureSettings = "tnum"
-                        ),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f)
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = if (!isOverBudget) {
-                            "Sisa ${budgetUsage.remainingAmount.toRupiah()}"
-                        } else {
-                            "Lebih ${budgetUsage.overBudgetAmount.toRupiah()}"
-                        },
-                        style = TextStyle(
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.SemiBold,
-                            color = if (!isOverBudget) IncomeGreen else ExpenseRed,
-                            fontFeatureSettings = "tnum"
-                        )
-                    )
-                }
-            }
-        }
     }
 }
 
@@ -474,91 +310,6 @@ private fun EditDisplayNameDialog(
         confirmButton = {
             Button(
                 onClick = { onConfirm(inputName) },
-                shape = RoundedCornerShape(10.dp),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = PrimaryTeal,
-                    contentColor = Color.White
-                )
-            ) {
-                Text(text = "Simpan", fontWeight = FontWeight.SemiBold)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "Batal", color = TextSecondary)
-            }
-        }
-    )
-}
-
-@Composable
-private fun EditMonthlyBudgetDialog(
-    initialLimit: Long,
-    onDismiss: () -> Unit,
-    onConfirm: (Long) -> Unit
-) {
-    var budgetInput by remember(initialLimit) {
-        mutableStateOf(if (initialLimit > 0L) initialLimit.toString() else "")
-    }
-    val thousandSeparator = remember { ThousandSeparatorVisualTransformation() }
-
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = CardSurface,
-        shape = RoundedCornerShape(20.dp),
-        title = {
-            Text(
-                text = "Atur Anggaran Bulanan",
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = TextPrimary
-            )
-        },
-        text = {
-            Column(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Tentukan batas pengeluaran bulanan untuk memantau pemakaian kas bulan ini.",
-                    fontSize = 13.sp,
-                    color = TextSecondary
-                )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedTextField(
-                    value = budgetInput,
-                    onValueChange = { input ->
-                        budgetInput = sanitizeNominalInput(input)
-                    },
-                    label = { Text("Batas Anggaran (Rp)") },
-                    prefix = {
-                        Text(
-                            text = "Rp ",
-                            fontWeight = FontWeight.SemiBold,
-                            color = TextSecondary
-                        )
-                    },
-                    supportingText = {
-                        Text(
-                            text = "Kosongkan atau isi 0 untuk menonaktifkan batas anggaran",
-                            fontSize = 11.sp,
-                            color = TextSecondary
-                        )
-                    },
-                    singleLine = true,
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    visualTransformation = thousandSeparator,
-                    shape = RoundedCornerShape(12.dp),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedBorderColor = PrimaryTeal,
-                        unfocusedBorderColor = CardBorder,
-                        focusedLabelColor = PrimaryTeal,
-                        cursorColor = PrimaryTeal
-                    ),
-                    modifier = Modifier.fillMaxWidth()
-                )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onConfirm(budgetInput.toLongOrNull() ?: 0L) },
                 shape = RoundedCornerShape(10.dp),
                 colors = ButtonDefaults.buttonColors(
                     containerColor = PrimaryTeal,
@@ -757,12 +508,8 @@ private fun ProfileScreenPreview() {
         ProfileContent(
             displayName = "Nugroho Ghathfaan",
             totalAssets = 3_450_000L,
-            budgetUsage = calculateMonthlyBudgetUsage(
-                usedExpense = 620_000L,
-                budgetLimit = 1_500_000L
-            ),
             onSaveDisplayName = {},
-            onSaveMonthlyBudget = {},
+            onReportClick = {},
             onAboutDetailClick = {}
         )
     }

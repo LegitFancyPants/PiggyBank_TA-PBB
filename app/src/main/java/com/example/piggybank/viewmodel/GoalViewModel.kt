@@ -1,21 +1,27 @@
 package com.example.piggybank.viewmodel
 
-import androidx.lifecycle.ViewModel
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.example.piggybank.data.ConnectivityObserver
+import com.example.piggybank.data.OfflineSyncStore
+import com.example.piggybank.data.PendingOpType
+import com.example.piggybank.data.isPermanentClientError
+import com.example.piggybank.data.isTransientNetworkError
 import com.example.piggybank.model.GoalRequest
 import com.example.piggybank.model.GoalSortOption
 import com.example.piggybank.model.GoalStatusFilter
 import com.example.piggybank.model.SavingsGoal
 import com.example.piggybank.model.filterAndSortGoals
-import com.example.piggybank.model.sampleSavingsGoals
 import com.example.piggybank.network.ApiClient
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import retrofit2.HttpException
-import java.io.IOException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 data class GoalUiState(
     val goals: List<SavingsGoal> = emptyList(),
@@ -29,54 +35,72 @@ data class GoalUiState(
     val isLoading: Boolean = false,
     val isDetailLoading: Boolean = false,
     val isSubmitting: Boolean = false,
-    val errorMessage: String? = null,
-    val isUsingMockData: Boolean = false
+    val errorMessage: String? = null
 )
 
-class GoalViewModel : ViewModel() {
+class GoalViewModel(application: Application) : AndroidViewModel(application) {
+
+    private val store = OfflineSyncStore.getInstance(application)
+    private val syncMutex = Mutex()
 
     private val _uiState = MutableStateFlow(GoalUiState(isLoading = true))
     val uiState: StateFlow<GoalUiState> = _uiState.asStateFlow()
 
-    init {
+    private val connectivityObserver = ConnectivityObserver(application) {
         fetchGoals()
     }
 
+    init {
+        ApiClient.initialize(application)
+        val cached = store.getCachedGoals()
+        if (cached.isNotEmpty()) {
+            applyGoals(cached)
+        }
+        connectivityObserver.register()
+        fetchGoals()
+    }
+
+    override fun onCleared() {
+        connectivityObserver.unregister()
+        super.onCleared()
+    }
+
+    fun resolveGoalId(id: Long): Long = store.resolveGoalId(id)
+
     fun fetchGoals() {
         viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true, errorMessage = null) }
-            try {
-                val remoteGoals = ApiClient.apiService.getGoals()
-                applyGoals(
-                    goals = remoteGoals,
-                    isUsingMockData = false,
-                    errorMessage = null
-                )
-            } catch (_: Exception) {
-                val fallback = _uiState.value.goals.ifEmpty { sampleSavingsGoals() }
-                applyGoals(
-                    goals = fallback,
-                    isUsingMockData = true,
-                    errorMessage = "Server belum terhubung. Menampilkan data celengan contoh."
-                )
+            if (_uiState.value.goals.isEmpty() && connectivityObserver.isOnline()) {
+                _uiState.update { it.copy(isLoading = true, errorMessage = null) }
             }
+            syncAndRefreshInternal()
         }
     }
 
     fun fetchGoalDetail(id: Long) {
         viewModelScope.launch {
-            val cached = _uiState.value.goals.find { it.id == id }
-                ?: sampleSavingsGoals().find { it.id == id }
+            val resolvedId = store.resolveGoalId(id)
+            val cached = _uiState.value.goals.find { it.id == resolvedId }
+                ?: store.getCachedGoals().find { it.id == resolvedId }
             _uiState.update {
                 it.copy(
                     selectedGoal = cached,
-                    isDetailLoading = true,
+                    isDetailLoading = resolvedId > 0L && cached == null && connectivityObserver.isOnline(),
                     errorMessage = null
                 )
             }
 
+            if (resolvedId < 0L || !connectivityObserver.isOnline()) {
+                _uiState.update { it.copy(isDetailLoading = false) }
+                return@launch
+            }
+
+            if (store.getPendingGoalOps().any { it.targetId == resolvedId }) {
+                _uiState.update { it.copy(isDetailLoading = false) }
+                return@launch
+            }
+
             try {
-                val remote = ApiClient.apiService.getGoalById(id)
+                val remote = ApiClient.apiService.getGoalById(resolvedId)
                 val updatedList = if (_uiState.value.goals.any { it.id == remote.id }) {
                     _uiState.value.goals.map { if (it.id == remote.id) remote else it }
                 } else {
@@ -97,7 +121,8 @@ class GoalViewModel : ViewModel() {
                         isDetailLoading = false
                     )
                 }
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                if (e is CancellationException) throw e
                 _uiState.update { current ->
                     current.copy(
                         selectedGoal = current.selectedGoal ?: cached,
@@ -114,45 +139,32 @@ class GoalViewModel : ViewModel() {
     ) {
         viewModelScope.launch {
             _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
-            try {
-                val created = ApiClient.apiService.createGoal(request)
-                val updatedList = listOf(created) + _uiState.value.goals.filterNot { it.id == created.id }
-                applyGoals(
-                    goals = updatedList,
-                    isUsingMockData = false,
-                    errorMessage = null
-                )
-                _uiState.update { it.copy(isSubmitting = false) }
-                fetchGoals()
-                onSuccess()
-            } catch (e: Exception) {
-                if (shouldFallbackLocally(e)) {
-                    val baseList = _uiState.value.goals.ifEmpty { sampleSavingsGoals() }
-                    val nextId = maxOf(
-                        System.currentTimeMillis(),
-                        (baseList.maxOfOrNull { it.id } ?: 0L) + 1L
-                    )
-                    val localGoal = SavingsGoal(
-                        id = nextId,
-                        name = request.name,
-                        targetAmount = request.targetAmount,
-                        currentAmount = request.currentAmount,
-                        deadline = request.deadline,
-                        note = request.note
-                    )
-                    applyGoals(
-                        goals = baseList + localGoal,
-                        isUsingMockData = true,
-                        errorMessage = "Server belum terhubung. Perubahan disimpan sementara secara lokal."
-                    )
+
+            if (!connectivityObserver.isOnline()) {
+                applyLocalCreateGoal(request, onSuccess)
+                return@launch
+            }
+
+            syncMutex.withLock {
+                try {
+                    flushPendingGoalOpsLocked()
+                    val created = ApiClient.apiService.createGoal(request)
+                    val updatedList = listOf(created) + store.getCachedGoals().filterNot { it.id == created.id }
+                    val merged = store.saveRemoteGoalsMerged(updatedList)
+                    applyGoals(merged)
                     _uiState.update { it.copy(isSubmitting = false) }
                     onSuccess()
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isSubmitting = false,
-                            errorMessage = e.message ?: "Gagal menyimpan target tabungan."
-                        )
+                    refreshFromRemoteLocked()
+                } catch (e: Exception) {
+                    if (isTransientNetworkError(e)) {
+                        applyLocalCreateGoal(request, onSuccess)
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                isSubmitting = false,
+                                errorMessage = e.message ?: "Gagal menyimpan target tabungan."
+                            )
+                        }
                     }
                 }
             }
@@ -165,60 +177,40 @@ class GoalViewModel : ViewModel() {
         onSuccess: () -> Unit
     ) {
         viewModelScope.launch {
+            val resolvedId = store.resolveGoalId(id)
             _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
-            try {
-                val updated = ApiClient.apiService.updateGoal(id, request)
-                val updatedList = _uiState.value.goals.map { if (it.id == id) updated else it }
-                applyGoals(
-                    goals = updatedList,
-                    isUsingMockData = false,
-                    errorMessage = null
-                )
-                _uiState.update {
-                    it.copy(
-                        selectedGoal = updated,
-                        isSubmitting = false
-                    )
-                }
-                fetchGoals()
-                onSuccess()
-            } catch (e: Exception) {
-                if (shouldFallbackLocally(e)) {
-                    val existing = _uiState.value.goals.find { it.id == id }
-                        ?: _uiState.value.selectedGoal
-                    val updatedLocal = SavingsGoal(
-                        id = id,
-                        name = request.name,
-                        targetAmount = request.targetAmount,
-                        currentAmount = request.currentAmount,
-                        deadline = request.deadline,
-                        note = request.note,
-                        createdAt = existing?.createdAt
-                    )
-                    val baseList = _uiState.value.goals.ifEmpty { sampleSavingsGoals() }
-                    val updatedList = if (baseList.any { it.id == id }) {
-                        baseList.map { if (it.id == id) updatedLocal else it }
-                    } else {
-                        listOf(updatedLocal) + baseList
-                    }
-                    applyGoals(
-                        goals = updatedList,
-                        isUsingMockData = true,
-                        errorMessage = "Server belum terhubung. Perubahan disimpan sementara secara lokal."
-                    )
+
+            if (resolvedId < 0L || !connectivityObserver.isOnline()) {
+                applyLocalUpdateGoal(resolvedId, request, onSuccess)
+                return@launch
+            }
+
+            syncMutex.withLock {
+                try {
+                    flushPendingGoalOpsLocked()
+                    val postFlushId = store.resolveGoalId(resolvedId)
+                    val updated = ApiClient.apiService.updateGoal(postFlushId, request)
+                    val updatedList = store.getCachedGoals().map { if (it.id == postFlushId) updated else it }
+                    val merged = store.saveRemoteGoalsMerged(updatedList)
+                    applyGoals(merged)
                     _uiState.update {
                         it.copy(
-                            selectedGoal = updatedLocal,
+                            selectedGoal = updated,
                             isSubmitting = false
                         )
                     }
                     onSuccess()
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isSubmitting = false,
-                            errorMessage = e.message ?: "Gagal memperbarui target tabungan."
-                        )
+                    refreshFromRemoteLocked()
+                } catch (e: Exception) {
+                    if (isTransientNetworkError(e)) {
+                        applyLocalUpdateGoal(store.resolveGoalId(resolvedId), request, onSuccess)
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                isSubmitting = false,
+                                errorMessage = e.message ?: "Gagal memperbarui target tabungan."
+                            )
+                        }
                     }
                 }
             }
@@ -246,31 +238,22 @@ class GoalViewModel : ViewModel() {
         onSuccess: () -> Unit
     ) {
         viewModelScope.launch {
+            val resolvedId = store.resolveGoalId(id)
             _uiState.update { it.copy(isSubmitting = true, errorMessage = null) }
-            try {
-                ApiClient.apiService.deleteGoal(id)
-                val remaining = _uiState.value.goals.filterNot { it.id == id }
-                applyGoals(
-                    goals = remaining,
-                    isUsingMockData = false,
-                    errorMessage = null
-                )
-                _uiState.update {
-                    it.copy(
-                        selectedGoal = null,
-                        isSubmitting = false
-                    )
-                }
-                fetchGoals()
-                onSuccess()
-            } catch (e: Exception) {
-                if (shouldFallbackLocally(e)) {
-                    val remaining = _uiState.value.goals.filterNot { it.id == id }
-                    applyGoals(
-                        goals = remaining,
-                        isUsingMockData = true,
-                        errorMessage = "Server belum terhubung. Perubahan disimpan sementara secara lokal."
-                    )
+
+            if (resolvedId < 0L || !connectivityObserver.isOnline()) {
+                applyLocalDeleteGoal(resolvedId, onSuccess)
+                return@launch
+            }
+
+            syncMutex.withLock {
+                try {
+                    flushPendingGoalOpsLocked()
+                    val postFlushId = store.resolveGoalId(resolvedId)
+                    ApiClient.apiService.deleteGoal(postFlushId)
+                    val remaining = store.getCachedGoals().filterNot { it.id == postFlushId }
+                    val merged = store.saveRemoteGoalsMerged(remaining)
+                    applyGoals(merged)
                     _uiState.update {
                         it.copy(
                             selectedGoal = null,
@@ -278,12 +261,17 @@ class GoalViewModel : ViewModel() {
                         )
                     }
                     onSuccess()
-                } else {
-                    _uiState.update {
-                        it.copy(
-                            isSubmitting = false,
-                            errorMessage = e.message ?: "Gagal menghapus target tabungan."
-                        )
+                    refreshFromRemoteLocked()
+                } catch (e: Exception) {
+                    if (isTransientNetworkError(e)) {
+                        applyLocalDeleteGoal(store.resolveGoalId(resolvedId), onSuccess)
+                    } else {
+                        _uiState.update {
+                            it.copy(
+                                isSubmitting = false,
+                                errorMessage = e.message ?: "Gagal menghapus target tabungan."
+                            )
+                        }
                     }
                 }
             }
@@ -336,19 +324,139 @@ class GoalViewModel : ViewModel() {
         _uiState.update { it.copy(errorMessage = null) }
     }
 
-    private fun shouldFallbackLocally(exception: Exception): Boolean {
-        if (exception is IOException) return true
-        if (exception is HttpException && (exception.code() == 404 || exception.code() >= 500)) {
-            return true
+    private suspend fun syncAndRefreshInternal() {
+        syncMutex.withLock {
+            if (!connectivityObserver.isOnline()) {
+                applyGoals(store.getCachedGoals())
+                return
+            }
+            try {
+                flushPendingGoalOpsLocked()
+                val remoteGoals = ApiClient.apiService.getGoals()
+                val merged = store.saveRemoteGoalsMerged(remoteGoals)
+                applyGoals(merged)
+            } catch (e: Exception) {
+                if (isTransientNetworkError(e)) {
+                    applyGoals(store.getCachedGoals())
+                } else {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
+            }
         }
-        return _uiState.value.isUsingMockData
     }
 
-    private fun applyGoals(
-        goals: List<SavingsGoal>,
-        isUsingMockData: Boolean,
-        errorMessage: String?
+    private suspend fun refreshFromRemoteLocked() {
+        try {
+            val remoteGoals = ApiClient.apiService.getGoals()
+            val merged = store.saveRemoteGoalsMerged(remoteGoals)
+            applyGoals(merged)
+        } catch (e: Exception) {
+            if (!isTransientNetworkError(e)) throw e
+        }
+    }
+
+    private suspend fun flushPendingGoalOpsLocked() {
+        val pendingOps = store.getPendingGoalOps()
+        for (op in pendingOps) {
+            val targetId = store.resolveGoalId(op.targetId)
+            when (op.type) {
+                PendingOpType.CREATE -> {
+                    val req = op.request ?: run {
+                        store.removeGoalOp(op.opId)
+                        continue
+                    }
+                    try {
+                        val created = ApiClient.apiService.createGoal(req)
+                        val updatedCache = store.markGoalCreateSynced(op.opId, targetId, created)
+                        if (_uiState.value.selectedGoal?.id == targetId) {
+                            _uiState.update { it.copy(selectedGoal = created) }
+                        }
+                        applyGoals(updatedCache)
+                    } catch (e: Exception) {
+                        if (isPermanentClientError(e)) store.removeGoalOp(op.opId) else throw e
+                    }
+                }
+                PendingOpType.UPDATE -> {
+                    val req = op.request ?: run {
+                        store.removeGoalOp(op.opId)
+                        continue
+                    }
+                    if (targetId < 0L) {
+                        try {
+                            val created = ApiClient.apiService.createGoal(req)
+                            store.markGoalCreateSynced(op.opId, targetId, created)
+                        } catch (e: Exception) {
+                            if (isPermanentClientError(e)) store.removeGoalOp(op.opId) else throw e
+                        }
+                    } else {
+                        try {
+                            val updated = ApiClient.apiService.updateGoal(targetId, req)
+                            store.markGoalUpdateSynced(op.opId, updated)
+                        } catch (e: Exception) {
+                            if (isPermanentClientError(e)) store.removeGoalOp(op.opId) else throw e
+                        }
+                    }
+                }
+                PendingOpType.DELETE -> {
+                    if (targetId < 0L) {
+                        store.removeGoalOp(op.opId)
+                    } else {
+                        try {
+                            ApiClient.apiService.deleteGoal(targetId)
+                            store.removeGoalOp(op.opId)
+                        } catch (e: Exception) {
+                            if (isPermanentClientError(e)) store.removeGoalOp(op.opId) else throw e
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    private fun applyLocalCreateGoal(
+        request: GoalRequest,
+        onSuccess: () -> Unit
     ) {
+        val updatedCache = store.enqueueCreateGoal(request)
+        applyGoals(updatedCache)
+        _uiState.update { it.copy(isSubmitting = false, errorMessage = null) }
+        onSuccess()
+    }
+
+    private fun applyLocalUpdateGoal(
+        id: Long,
+        request: GoalRequest,
+        onSuccess: () -> Unit
+    ) {
+        val (updatedGoal, updatedCache) = store.enqueueUpdateGoal(id, request)
+        applyGoals(updatedCache)
+        _uiState.update {
+            it.copy(
+                selectedGoal = updatedGoal,
+                isSubmitting = false,
+                errorMessage = null
+            )
+        }
+        onSuccess()
+    }
+
+    private fun applyLocalDeleteGoal(
+        id: Long,
+        onSuccess: () -> Unit
+    ) {
+        val remaining = store.enqueueDeleteGoal(id)
+        applyGoals(remaining)
+        _uiState.update {
+            it.copy(
+                selectedGoal = null,
+                isSubmitting = false,
+                errorMessage = null
+            )
+        }
+        onSuccess()
+    }
+
+    private fun applyGoals(goals: List<SavingsGoal>) {
         _uiState.update { current ->
             current.copy(
                 goals = goals,
@@ -361,8 +469,7 @@ class GoalViewModel : ViewModel() {
                 totalActiveGoals = goals.size,
                 totalSavedAllGoals = goals.sumOf { it.currentAmount },
                 isLoading = false,
-                isUsingMockData = isUsingMockData,
-                errorMessage = errorMessage
+                errorMessage = null
             )
         }
     }

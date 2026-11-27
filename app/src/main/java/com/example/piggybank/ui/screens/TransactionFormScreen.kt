@@ -107,7 +107,8 @@ fun TransactionFormScreen(
     modifier: Modifier = Modifier
 ) {
     val uiState by viewModel.uiState.collectAsState()
-    val editId = transactionId?.takeIf { it > 0L }
+    val resolvedId = transactionId?.let { viewModel.resolveTransactionId(it) }
+    val editId = resolvedId?.takeIf { it != 0L }
     val isEditMode = editId != null
 
     LaunchedEffect(editId) {
